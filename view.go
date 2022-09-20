@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -11,7 +12,7 @@ type mainView struct {
 	ctrl *controller
 
 	app         *tview.Application
-	layout      *tview.Flex
+	layout      *tview.Frame
 	dbTree      *tview.TreeView
 	queryInput  *tview.TextArea
 	resultTable *tview.Table
@@ -19,11 +20,13 @@ type mainView struct {
 	dbRootNode *tview.TreeNode
 
 	currentResultTableRow int
+	currentDB             string // currently selected dbID
 }
 
 type nodeRef struct {
-	Type nodeType
-	Name string
+	Type  nodeType
+	DB    string
+	Table string
 }
 
 type nodeType int
@@ -34,7 +37,9 @@ const (
 )
 
 func newMainView() *mainView {
-	return &mainView{}
+	view := &mainView{}
+	view.setup()
+	return view
 }
 
 func (v *mainView) setController(c *controller) {
@@ -58,11 +63,12 @@ func (v *mainView) setup() {
 	v.resultTable.SetBorder(true).SetTitle("Result")
 	v.resultTable.SetBorders(true)
 
-	v.layout = tview.NewFlex().
-		AddItem(v.dbTree, 0, 1, true).
-		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(v.queryInput, 0, 1, false).
-			AddItem(v.resultTable, 0, 3, false), 0, 3, false)
+	v.layout = tview.NewFrame(
+		tview.NewFlex().
+			AddItem(v.dbTree, 0, 1, true).
+			AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+				AddItem(v.queryInput, 0, 1, false).
+				AddItem(v.resultTable, 0, 3, false), 0, 3, false)).SetBorders(0, 0, 0, 0, 0, 0).AddText("^Q Quit ^G Goto Database", false, tview.AlignLeft, tcell.ColorDefault)
 
 	v.app.SetInputCapture(v.handleKey)
 
@@ -83,18 +89,19 @@ func (v *mainView) treeNodeSelected(node *tview.TreeNode) {
 
 	switch ref.Type {
 	case typeDB:
-		tables, err := v.ctrl.getTables()
+		log.Printf("selecting database %q", ref.DB)
+		tables, err := v.ctrl.getTables(ref.DB)
 		if err != nil {
 			v.showError("Listing tables failed: %v", err)
 			return
 		}
 		for _, table := range tables {
-			node.AddChild(tview.NewTreeNode(table).SetSelectable(true).SetReference(&nodeRef{Type: typeTable, Name: table}))
+			node.AddChild(tview.NewTreeNode(table).SetSelectable(true).SetReference(&nodeRef{Type: typeTable, DB: ref.DB, Table: table}))
 		}
 	case typeTable:
-		fields, err := v.ctrl.getTableColumns(ref.Name)
+		fields, err := v.ctrl.getTableColumns(ref.DB, ref.Table)
 		if err != nil {
-			v.showError("Listing columns for %s failed: %v", ref.Name, err)
+			v.showError("Listing columns for %s failed: %v", ref.Table, err)
 		}
 
 		for _, field := range fields {
@@ -104,13 +111,31 @@ func (v *mainView) treeNodeSelected(node *tview.TreeNode) {
 }
 
 func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
-	switch event.Key() {
-	case tcell.KeyCtrlI:
+	switch {
+	case event.Key() == tcell.KeyCtrlQ:
+		v.app.Stop()
+	case event.Modifiers() == tcell.ModCtrl && event.Key() == tcell.KeyRight:
 		v.app.SetFocus(v.queryInput)
-	case tcell.KeyCtrlK:
+	case event.Modifiers() == tcell.ModCtrl && event.Key() == tcell.KeyLeft:
 		v.app.SetFocus(v.dbTree)
-	case tcell.KeyCtrlSpace:
-		if err := v.ctrl.execQuery(v.queryInput.GetText()); err != nil {
+	case event.Modifiers() == tcell.ModCtrl && event.Key() == tcell.KeyDown:
+		v.app.SetFocus(v.resultTable)
+	case event.Key() == tcell.KeyCtrlG:
+		currentNode := v.dbTree.GetCurrentNode()
+		if currentNode != nil {
+			ref, ok := currentNode.GetReference().(*nodeRef)
+			if ok {
+				if ref.Type == typeDB {
+					v.currentDB = ref.DB
+				}
+			}
+		}
+	case event.Key() == tcell.KeyCtrlSpace:
+		if v.currentDB == "" {
+			v.showError("No database has been selected")
+			return nil
+		}
+		if err := v.ctrl.execQuery(v.currentDB, v.queryInput.GetText()); err != nil {
 			v.showError("Query failed: %v", err)
 			return nil
 		}
@@ -121,8 +146,11 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
-func (v *mainView) addDatabase(db string) {
-	v.dbRootNode.AddChild(tview.NewTreeNode(db).SetSelectable(true).SetReference(&nodeRef{Type: typeDB, Name: db}))
+func (v *mainView) addDatabase(dbID, dbName string) {
+	v.dbRootNode.AddChild(tview.NewTreeNode(dbName).SetSelectable(true).SetReference(&nodeRef{Type: typeDB, DB: dbID}))
+	if v.currentDB == "" { // if no database been selected yet, simply set it to database that is being added.
+		v.currentDB = dbID
+	}
 }
 
 func (v *mainView) clearResultTable() {

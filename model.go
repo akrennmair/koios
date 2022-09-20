@@ -10,12 +10,15 @@ import (
 )
 
 type model struct {
-	ctrl *controller
-	db   *sqlx.DB
+	ctrl    *controller
+	dbs     map[string]*sqlx.DB
+	counter int
 }
 
 func newModel() *model {
-	return &model{}
+	return &model{
+		dbs: make(map[string]*sqlx.DB),
+	}
 }
 
 func (m *model) setController(c *controller) {
@@ -27,22 +30,26 @@ type column struct {
 	Type string
 }
 
-func (m *model) openDatabase(dbName string) error {
-	db, err := sqlx.Open("sqlite", dbName)
+func (m *model) openDatabase(driver, dbName string) (string, error) {
+	db, err := sqlx.Open(driver, dbName)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	m.db = db
-	return nil
+	dbID := fmt.Sprintf("%s-%d", driver, m.counter)
+	m.counter++
+
+	m.dbs[dbID] = db
+
+	return dbID, nil
 }
 
-func (m *model) getTables() ([]string, error) {
-	if m.db == nil {
-		return nil, fmt.Errorf("no database is open")
+func (m *model) getTables(dbID string) ([]string, error) {
+	if m.dbs[dbID] == nil {
+		return nil, fmt.Errorf("database is not open")
 	}
 
-	rows, err := m.db.Query("PRAGMA table_list")
+	rows, err := m.dbs[dbID].Query("PRAGMA table_list")
 	if err != nil {
 		return nil, err
 	}
@@ -66,12 +73,12 @@ func (m *model) getTables() ([]string, error) {
 	return tables, nil
 }
 
-func (m *model) getTableColumns(tbl string) ([]column, error) {
-	if m.db == nil {
-		return nil, fmt.Errorf("no database is open")
+func (m *model) getTableColumns(dbID, tbl string) ([]column, error) {
+	if m.dbs[dbID] == nil {
+		return nil, fmt.Errorf("database is not open")
 	}
 
-	rows, err := m.db.Query("PRAGMA table_info(" + tbl + ")")
+	rows, err := m.dbs[dbID].Query("PRAGMA table_info(" + tbl + ")")
 	if err != nil {
 		return nil, fmt.Errorf("querying columns for %s failed: %v", tbl, err)
 
@@ -99,12 +106,12 @@ func (m *model) getTableColumns(tbl string) ([]column, error) {
 	return cols, nil
 }
 
-func (m *model) execQuery(q string) error {
-	if m.db == nil {
-		return fmt.Errorf("no database is open")
+func (m *model) execQuery(dbID, q string) error {
+	if m.dbs[dbID] == nil {
+		return fmt.Errorf("database is not open")
 	}
 
-	rows, err := m.db.QueryxContext(context.TODO(), q)
+	rows, err := m.dbs[dbID].QueryxContext(context.TODO(), q)
 	if err != nil {
 		return err
 	}

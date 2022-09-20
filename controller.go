@@ -12,23 +12,24 @@ func newController(model *model, view *mainView) *controller {
 	}
 }
 
-func (c *controller) getTables() ([]string, error) {
-	return c.model.getTables()
+func (c *controller) getTables(dbID string) ([]string, error) {
+	return c.model.getTables(dbID)
 }
 
-func (c *controller) getTableColumns(tbl string) ([]column, error) {
-	return c.model.getTableColumns(tbl)
+func (c *controller) getTableColumns(dbID, tbl string) ([]column, error) {
+	return c.model.getTableColumns(dbID, tbl)
 }
 
-func (c *controller) execQuery(q string) error {
-	return c.model.execQuery(q)
+func (c *controller) execQuery(dbID, q string) error {
+	return c.model.execQuery(dbID, q)
 }
 
-func (c *controller) openDatabase(db string) error {
-	if err := c.model.openDatabase(db); err != nil {
+func (c *controller) openDatabase(driver, db string) error {
+	dbID, err := c.model.openDatabase(driver, db)
+	if err != nil {
 		return err
 	}
-	c.view.addDatabase(db)
+	c.view.addDatabase(dbID, db)
 	return nil
 }
 
