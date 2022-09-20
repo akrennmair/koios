@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -64,7 +63,7 @@ func (v *mainView) setup() {
 	v.resultTable.SetBorder(true).SetTitle("Result")
 	v.resultTable.SetBorders(true)
 
-	v.infoLine = tview.NewTextView().SetText("^Q Quit etc.")
+	v.infoLine = tview.NewTextView().SetText("^Q Quit | ^I Query Input | ^T DB Tree | ^R Result | ^S Select DB | ^Space Run Query | ^A Add DB")
 
 	v.layout = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewFlex().
@@ -74,7 +73,7 @@ func (v *mainView) setup() {
 				AddItem(v.resultTable, 0, 3, false), 0, 3, false), 0, 1, false).
 		AddItem(v.infoLine, 1, 1, false)
 
-	v.app.SetInputCapture(v.handleKey)
+	v.layout.SetInputCapture(v.handleKey)
 
 	v.app.SetRoot(v.layout, true).EnableMouse(true)
 
@@ -95,7 +94,6 @@ func (v *mainView) treeNodeSelected(node *tview.TreeNode) {
 
 	switch ref.Type {
 	case typeDB:
-		log.Printf("selecting database %q", ref.DB)
 		tables, err := v.ctrl.getTables(ref.DB)
 		if err != nil {
 			v.showError("Listing tables failed: %v", err)
@@ -120,13 +118,13 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 	switch {
 	case event.Key() == tcell.KeyCtrlQ:
 		v.app.Stop()
-	case event.Modifiers() == tcell.ModCtrl && event.Key() == tcell.KeyRight:
+	case event.Key() == tcell.KeyCtrlI:
 		v.app.SetFocus(v.queryInput)
-	case event.Modifiers() == tcell.ModCtrl && event.Key() == tcell.KeyLeft:
+	case event.Key() == tcell.KeyCtrlT:
 		v.app.SetFocus(v.dbTree)
-	case event.Modifiers() == tcell.ModCtrl && event.Key() == tcell.KeyDown:
+	case event.Key() == tcell.KeyCtrlR:
 		v.app.SetFocus(v.resultTable)
-	case event.Key() == tcell.KeyCtrlG:
+	case event.Key() == tcell.KeyCtrlS:
 		currentNode := v.dbTree.GetCurrentNode()
 		if currentNode != nil {
 			ref, ok := currentNode.GetReference().(*nodeRef)
@@ -136,6 +134,8 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 				}
 			}
 		}
+	case event.Key() == tcell.KeyCtrlA:
+		v.addDatabaseDialog()
 	case event.Key() == tcell.KeyCtrlSpace:
 		if v.currentDB == "" {
 			v.showError("No database has been selected")
@@ -145,11 +145,54 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 			v.showError("Query failed: %v", err)
 			return nil
 		}
+		v.app.SetFocus(v.resultTable)
 	default:
 		return event
 	}
 
 	return nil
+}
+
+func (v *mainView) addDatabaseDialog() {
+	selectedOption := ""
+	form := tview.NewForm().AddDropDown("Driver", []string{"sqlite", "postgres"}, 0, func(option string, optionIndex int) {
+		selectedOption = option
+	}).AddButton("Next", func() {
+		switch selectedOption {
+		case "sqlite":
+			v.addDatabaseDialogSqlite()
+		case "postgres":
+			v.addDatabaseDialogPostgres()
+		}
+	}).AddButton("Cancel", func() {
+		v.app.SetRoot(v.layout, true)
+	})
+
+	form.SetBorder(true).SetTitle("Add Database - Choose Driver")
+
+	v.app.SetRoot(form, true)
+}
+
+func (v *mainView) addDatabaseDialogSqlite() {
+	var form *tview.Form
+	form = tview.NewForm().
+		AddInputField("Filename", "", 30, nil, nil).
+		AddButton("Add Database", func() {
+			v.ctrl.openDatabase("sqlite", form.GetFormItem(0).(*tview.InputField).GetText())
+			v.app.SetRoot(v.layout, true)
+		}).
+		AddButton("Cancel", func() {
+			v.app.SetRoot(v.layout, true)
+		})
+
+	form.SetBorder(true).SetTitle("Add Database - SQLite Configuration")
+
+	v.app.SetRoot(form, true)
+}
+
+func (v *mainView) addDatabaseDialogPostgres() {
+	v.showError("TODO: implement postgres support")
+	// TODO: implement
 }
 
 func (v *mainView) addDatabase(dbID, dbName string) {
@@ -174,6 +217,7 @@ func (v *mainView) addResultTableRow(values []string) {
 	for idx, val := range values {
 		v.resultTable.SetCell(v.currentResultTableRow, idx, tview.NewTableCell(val))
 	}
+	v.currentResultTableRow++
 }
 
 func (v *mainView) showError(s string, args ...any) {
