@@ -12,10 +12,11 @@ type mainView struct {
 	ctrl *controller
 
 	app         *tview.Application
-	layout      *tview.Frame
+	layout      *tview.Flex
 	dbTree      *tview.TreeView
 	queryInput  *tview.TextArea
 	resultTable *tview.Table
+	infoLine    *tview.TextView
 
 	dbRootNode *tview.TreeNode
 
@@ -63,16 +64,21 @@ func (v *mainView) setup() {
 	v.resultTable.SetBorder(true).SetTitle("Result")
 	v.resultTable.SetBorders(true)
 
-	v.layout = tview.NewFrame(
-		tview.NewFlex().
+	v.infoLine = tview.NewTextView().SetText("^Q Quit etc.")
+
+	v.layout = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(tview.NewFlex().
 			AddItem(v.dbTree, 0, 1, true).
 			AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
 				AddItem(v.queryInput, 0, 1, false).
-				AddItem(v.resultTable, 0, 3, false), 0, 3, false)).SetBorders(0, 0, 0, 0, 0, 0).AddText("^Q Quit ^G Goto Database", false, tview.AlignLeft, tcell.ColorDefault)
+				AddItem(v.resultTable, 0, 3, false), 0, 3, false), 0, 1, false).
+		AddItem(v.infoLine, 1, 1, false)
 
 	v.app.SetInputCapture(v.handleKey)
 
 	v.app.SetRoot(v.layout, true).EnableMouse(true)
+
+	v.app.SetFocus(v.dbTree)
 }
 
 func (v *mainView) treeNodeSelected(node *tview.TreeNode) {
