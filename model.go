@@ -5,19 +5,29 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net/url"
 
 	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
+	_ "modernc.org/sqlite"
 )
 
 type model struct {
 	ctrl    *controller
 	dbs     map[string]*sqlx.DB
+	dbInfo  map[string]dbInfo
 	counter int
+}
+
+type dbInfo struct {
+	Driver string
+	DSN    string
 }
 
 func newModel() *model {
 	return &model{
-		dbs: make(map[string]*sqlx.DB),
+		dbs:    make(map[string]*sqlx.DB),
+		dbInfo: make(map[string]dbInfo),
 	}
 }
 
@@ -40,6 +50,7 @@ func (m *model) openDatabase(driver, dbName string) (string, error) {
 	m.counter++
 
 	m.dbs[dbID] = db
+	m.dbInfo[dbID] = dbInfo{Driver: driver, DSN: dbName}
 
 	return dbID, nil
 }
@@ -138,4 +149,17 @@ func (m *model) execQuery(dbID, q string) error {
 		m.ctrl.addResultTableRow(values)
 	}
 	return nil
+}
+
+func (m *model) getDatabaseName(dbID string) string {
+	info := m.dbInfo[dbID]
+	switch info.Driver {
+	case "sqlite":
+		return info.DSN
+	case "postgres":
+		u, _ := url.Parse(info.DSN)
+		return fmt.Sprintf("%s/%s", u.Hostname(), u.Path[1:])
+	default:
+		panic("unsupported driver " + info.Driver)
+	}
 }

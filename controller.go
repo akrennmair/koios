@@ -29,7 +29,7 @@ func (c *controller) openDatabase(driver, db string) error {
 	if err != nil {
 		return err
 	}
-	c.view.addDatabase(dbID, db)
+	c.view.addDatabase(dbID, c.model.getDatabaseName(dbID))
 	return nil
 }
 
