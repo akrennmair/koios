@@ -1,5 +1,4 @@
 # TODOs
 
 * add generic dialog to add additional databases, make cmdline arg optional
-* add additional layer of type/driver
-* add support for other database drivers (postgres, athena, ...)
+* add Athena support

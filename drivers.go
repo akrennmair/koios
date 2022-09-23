@@ -9,6 +9,14 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+type dbInfo interface {
+	Driver() string
+	Name() string
+	Conn() *sqlx.DB
+	GetTables() ([]string, error)
+	GetTableColumns(table string) ([]column, error)
+}
+
 type sqliteDbInfo struct {
 	DSN string
 	DB  *sqlx.DB
@@ -119,6 +127,73 @@ func (i *pgDbInfo) GetTables() ([]string, error) {
 
 func (i *pgDbInfo) GetTableColumns(tbl string) ([]column, error) {
 	rows, err := i.DB.Query("select column_name, data_type from information_schema.columns where table_schema = 'public' and table_name = $1", tbl)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cols []column
+	for rows.Next() {
+		var (
+			col string
+			typ string
+		)
+		if err := rows.Scan(&col, &typ); err != nil {
+			return nil, err
+		}
+		cols = append(cols, column{Name: col, Type: typ})
+	}
+
+	return cols, nil
+}
+
+type athenaDbInfo struct {
+	DSN string
+	DB  *sqlx.DB
+}
+
+func (i *athenaDbInfo) Driver() string {
+	return "athena"
+}
+
+func (i *athenaDbInfo) Name() string {
+	params, _ := url.ParseQuery(i.DSN)
+	name := params.Get("db")
+	if name == "" {
+		name = "Athena"
+	}
+	return name
+}
+
+func (i *athenaDbInfo) Conn() *sqlx.DB {
+	return i.DB
+}
+
+func (i *athenaDbInfo) GetTables() ([]string, error) {
+	params, _ := url.ParseQuery(i.DSN)
+	name := params.Get("db")
+	rows, err := i.DB.Query("SELECT table_name FROM information_schema.tables WHERE table_schema = '" + name + "'")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			return nil, err
+		}
+		tables = append(tables, table)
+	}
+
+	return tables, nil
+}
+
+func (i *athenaDbInfo) GetTableColumns(table string) ([]column, error) {
+	params, _ := url.ParseQuery(i.DSN)
+	name := params.Get("db")
+	rows, err := i.DB.Query("select column_name, data_type from information_schema.columns where table_schema = '" + name + "' and table_name = '" + table + "'")
 	if err != nil {
 		return nil, err
 	}

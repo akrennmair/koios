@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	_ "github.com/akrennmair/go-athena"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
@@ -12,14 +13,6 @@ type model struct {
 	ctrl    *controller
 	dbInfo  map[string]dbInfo
 	counter int
-}
-
-type dbInfo interface {
-	Driver() string
-	Name() string
-	Conn() *sqlx.DB
-	GetTables() ([]string, error)
-	GetTableColumns(table string) ([]column, error)
 }
 
 func newModel() *model {
@@ -62,6 +55,8 @@ func (m *model) getDBInfo(driver, dsn string, db *sqlx.DB) (dbInfo, error) {
 		return &sqliteDbInfo{DSN: dsn, DB: db}, nil
 	case "postgres":
 		return &pgDbInfo{DSN: dsn, DB: db}, nil
+	case "athena":
+		return &athenaDbInfo{DSN: dsn, DB: db}, nil
 	default:
 		return nil, fmt.Errorf("unsupported driver %q", driver)
 	}
