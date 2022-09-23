@@ -1,11 +1,7 @@
 package main
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
-	"log"
-	"net/url"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -14,19 +10,20 @@ import (
 
 type model struct {
 	ctrl    *controller
-	dbs     map[string]*sqlx.DB
 	dbInfo  map[string]dbInfo
 	counter int
 }
 
-type dbInfo struct {
-	Driver string
-	DSN    string
+type dbInfo interface {
+	Driver() string
+	Name() string
+	Conn() *sqlx.DB
+	GetTables() ([]string, error)
+	GetTableColumns(table string) ([]column, error)
 }
 
 func newModel() *model {
 	return &model{
-		dbs:    make(map[string]*sqlx.DB),
 		dbInfo: make(map[string]dbInfo),
 	}
 }
@@ -40,8 +37,8 @@ type column struct {
 	Type string
 }
 
-func (m *model) openDatabase(driver, dbName string) (string, error) {
-	db, err := sqlx.Open(driver, dbName)
+func (m *model) openDatabase(driver, dsn string) (string, error) {
+	db, err := sqlx.Open(driver, dsn)
 	if err != nil {
 		return "", err
 	}
@@ -49,80 +46,52 @@ func (m *model) openDatabase(driver, dbName string) (string, error) {
 	dbID := fmt.Sprintf("%s-%d", driver, m.counter)
 	m.counter++
 
-	m.dbs[dbID] = db
-	m.dbInfo[dbID] = dbInfo{Driver: driver, DSN: dbName}
+	info, err := m.getDBInfo(driver, dsn, db)
+	if err != nil {
+		return "", err
+	}
+
+	m.dbInfo[dbID] = info
 
 	return dbID, nil
 }
 
+func (m *model) getDBInfo(driver, dsn string, db *sqlx.DB) (dbInfo, error) {
+	switch driver {
+	case "sqlite":
+		return &sqliteDbInfo{DSN: dsn, DB: db}, nil
+	case "postgres":
+		return &pgDbInfo{DSN: dsn, DB: db}, nil
+	default:
+		return nil, fmt.Errorf("unsupported driver %q", driver)
+	}
+}
+
 func (m *model) getTables(dbID string) ([]string, error) {
-	if m.dbs[dbID] == nil {
+	info := m.dbInfo[dbID]
+	if info == nil {
 		return nil, fmt.Errorf("database is not open")
 	}
 
-	rows, err := m.dbs[dbID].Query("PRAGMA table_list")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var tables []string
-
-	for rows.Next() {
-		var (
-			schema, name, typ string
-			ncol              int
-			wr                int
-			strict            bool
-		)
-		if err := rows.Scan(&schema, &name, &typ, &ncol, &wr, &strict); err != nil {
-			return nil, fmt.Errorf("scan failed: %v", err)
-		}
-		tables = append(tables, name)
-	}
-
-	return tables, nil
+	return info.GetTables()
 }
 
 func (m *model) getTableColumns(dbID, tbl string) ([]column, error) {
-	if m.dbs[dbID] == nil {
+	info := m.dbInfo[dbID]
+	if info == nil {
 		return nil, fmt.Errorf("database is not open")
 	}
 
-	rows, err := m.dbs[dbID].Query("PRAGMA table_info(" + tbl + ")")
-	if err != nil {
-		return nil, fmt.Errorf("querying columns for %s failed: %v", tbl, err)
-
-	}
-	defer rows.Close()
-
-	var cols []column
-
-	for rows.Next() {
-		var (
-			cid       int
-			name, typ string
-			notNull   int
-			dfltValue sql.NullString
-			pk        int
-		)
-
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); err != nil {
-			log.Fatalf("Scan failed: %v", err)
-		}
-
-		cols = append(cols, column{Name: name, Type: typ})
-	}
-
-	return cols, nil
+	return info.GetTableColumns(tbl)
 }
 
 func (m *model) execQuery(dbID, q string) error {
-	if m.dbs[dbID] == nil {
+	info := m.dbInfo[dbID]
+	if info == nil {
 		return fmt.Errorf("database is not open")
 	}
 
-	rows, err := m.dbs[dbID].QueryxContext(context.TODO(), q)
+	rows, err := info.Conn().Queryx(q)
 	if err != nil {
 		return err
 	}
@@ -153,13 +122,5 @@ func (m *model) execQuery(dbID, q string) error {
 
 func (m *model) getDatabaseName(dbID string) string {
 	info := m.dbInfo[dbID]
-	switch info.Driver {
-	case "sqlite":
-		return info.DSN
-	case "postgres":
-		u, _ := url.Parse(info.DSN)
-		return fmt.Sprintf("%s/%s", u.Hostname(), u.Path[1:])
-	default:
-		panic("unsupported driver " + info.Driver)
-	}
+	return info.Name()
 }
