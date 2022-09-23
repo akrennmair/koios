@@ -76,8 +76,13 @@ func (v *mainView) setup() {
 
 	v.layout.SetInputCapture(v.handleKey)
 
-	v.app.SetRoot(v.layout, true).EnableMouse(true)
+	v.app.EnableMouse(true)
 
+	v.showMainView()
+}
+
+func (v *mainView) showMainView() {
+	v.app.SetRoot(v.layout, true)
 	v.app.SetFocus(v.dbTree)
 }
 
@@ -166,7 +171,7 @@ func (v *mainView) addDatabaseDialog() {
 			v.addDatabaseDialogPostgres()
 		}
 	}).AddButton("Cancel", func() {
-		v.app.SetRoot(v.layout, true)
+		v.showMainView()
 	})
 
 	form.SetBorder(true).SetTitle("Add Database - Choose Driver")
@@ -180,10 +185,10 @@ func (v *mainView) addDatabaseDialogSqlite() {
 		AddInputField("Filename", "", 30, nil, nil).
 		AddButton("Add Database", func() {
 			v.ctrl.openDatabase("sqlite", form.GetFormItem(0).(*tview.InputField).GetText())
-			v.app.SetRoot(v.layout, true)
+			v.showMainView()
 		}).
 		AddButton("Cancel", func() {
-			v.app.SetRoot(v.layout, true)
+			v.showMainView()
 		})
 
 	form.SetBorder(true).SetTitle("Add Database - SQLite Configuration")
@@ -214,10 +219,10 @@ func (v *mainView) addDatabaseDialogPostgres() {
 				v.showError("opening database failed: %v", err)
 				return
 			}
-			v.app.SetRoot(v.layout, true)
+			v.showMainView()
 		}).
 		AddButton("Cancel", func() {
-			v.app.SetRoot(v.layout, true)
+			v.showMainView()
 		})
 
 	form.SetBorder(true).SetTitle("Add Database - PostgreSQL Configuration")
@@ -255,7 +260,7 @@ func (v *mainView) showError(s string, args ...any) {
 		SetText(fmt.Sprintf(s, args...)).
 		AddButtons([]string{"OK"}).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-			v.app.SetRoot(v.layout, true)
+			v.showMainView()
 		})
 
 	v.app.SetRoot(modal, false)
