@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/gdamore/tcell/v2"
@@ -161,7 +162,7 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 
 func (v *mainView) addDatabaseDialog() {
 	selectedOption := ""
-	form := tview.NewForm().AddDropDown("Driver", []string{"sqlite", "postgres"}, 0, func(option string, optionIndex int) {
+	form := tview.NewForm().AddDropDown("Driver", []string{"sqlite", "postgres", "athena"}, 0, func(option string, optionIndex int) {
 		selectedOption = option
 	}).AddButton("Next", func() {
 		switch selectedOption {
@@ -169,6 +170,8 @@ func (v *mainView) addDatabaseDialog() {
 			v.addDatabaseDialogSqlite()
 		case "postgres":
 			v.addDatabaseDialogPostgres()
+		case "athena":
+			v.addDatabaseDialogAthena()
 		}
 	}).AddButton("Cancel", func() {
 		v.showMainView()
@@ -226,6 +229,50 @@ func (v *mainView) addDatabaseDialogPostgres() {
 		})
 
 	form.SetBorder(true).SetTitle("Add Database - PostgreSQL Configuration")
+
+	v.app.SetRoot(form, true)
+}
+
+func (v *mainView) addDatabaseDialogAthena() {
+	var form *tview.Form
+	form = tview.NewForm().
+		AddInputField("Database", "", 30, nil, nil).
+		AddInputField("Output Location", "", 30, nil, nil).
+		AddInputField("Workgroup", "primary", 30, nil, nil).
+		AddInputField("AWS Access Key ID", "", 30, nil, nil).
+		AddPasswordField("AWS Secret Access Key", "", 30, '*', nil).
+		AddInputField("AWS Region", "", 30, nil, nil).
+		AddButton("Add Database", func() {
+			db := form.GetFormItem(0).(*tview.InputField).GetText()
+			outputLocation := form.GetFormItem(1).(*tview.InputField).GetText()
+			workgroup := form.GetFormItem(2).(*tview.InputField).GetText()
+			awsAccessKeyID := form.GetFormItem(3).(*tview.InputField).GetText()
+			awsSecretAccessKey := form.GetFormItem(4).(*tview.InputField).GetText()
+			awsRegion := form.GetFormItem(5).(*tview.InputField).GetText()
+			cfg := url.Values{}
+			if db != "" {
+				cfg.Add("db", db)
+			}
+			if outputLocation != "" {
+				cfg.Add("output_location", outputLocation)
+			}
+			if workgroup != "" {
+				cfg.Add("workgroup", workgroup)
+			}
+			cfg.Add("access_key_id", awsAccessKeyID)
+			cfg.Add("secret_access_key", awsSecretAccessKey)
+			cfg.Add("region", awsRegion)
+			if err := v.ctrl.openDatabase("athena", cfg.Encode()); err != nil {
+				v.showError("opening database failed: %v", err)
+				return
+			}
+			v.showMainView()
+		}).
+		AddButton("Cancel", func() {
+			v.showMainView()
+		})
+
+	form.SetBorder(true).SetTitle("Add Database - Athena Configuration")
 
 	v.app.SetRoot(form, true)
 }
