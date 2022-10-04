@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net/url"
 	"path/filepath"
 	"sort"
@@ -31,7 +32,13 @@ var supportedDrivers = map[string]struct {
 			form.AddInputField("Filename", "", 30, nil, nil)
 		},
 		GetConnectParams: func(form *tview.Form) connectParams {
-			return connectParams{"file": form.GetFormItem(0).(*tview.InputField).GetText()}
+			file := form.GetFormItem(0).(*tview.InputField).GetText()
+			abspath, err := filepath.Abs(file)
+			if err != nil {
+				log.Printf("filepath.Abs %s failed: %v", file, err)
+				abspath = file
+			}
+			return connectParams{"file": abspath}
 		},
 	},
 	"postgres": {
