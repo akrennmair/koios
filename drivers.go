@@ -38,6 +38,7 @@ var supportedDrivers = map[string]struct {
 				log.Printf("filepath.Abs %s failed: %v", file, err)
 				abspath = file
 			}
+
 			return connectParams{"file": abspath}
 		},
 	},
@@ -58,19 +59,21 @@ var supportedDrivers = map[string]struct {
 				AddInputField("Host", "localhost", 30, nil, nil).
 				AddInputField("Port", "5432", 30, func(textToCheck string, lastChar rune) bool {
 					i, err := strconv.ParseUint(textToCheck, 10, 64)
+
 					return err == nil && i >= 1 && i <= 65535
 				}, nil).
 				AddDropDown("SSL Mode", []string{"disable", "require", "verify-ca", "verify-full"}, 0, nil)
 		},
 		GetConnectParams: func(form *tview.Form) connectParams {
-			db := form.GetFormItem(0).(*tview.InputField).GetText()
+			database := form.GetFormItem(0).(*tview.InputField).GetText()
 			user := form.GetFormItem(1).(*tview.InputField).GetText()
 			password := form.GetFormItem(2).(*tview.InputField).GetText()
 			host := form.GetFormItem(3).(*tview.InputField).GetText()
 			port := form.GetFormItem(4).(*tview.InputField).GetText()
 			_, sslMode := form.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
+
 			return connectParams{
-				"db":       db,
+				"db":       database,
 				"user":     user,
 				"password": password,
 				"host":     host,
@@ -86,6 +89,7 @@ var supportedDrivers = map[string]struct {
 			for k, v := range params {
 				values.Set(k, v)
 			}
+
 			return values.Encode()
 		},
 		DBInfoGenerator: func(params connectParams, db *sqlx.DB) dbInfo {
@@ -101,14 +105,15 @@ var supportedDrivers = map[string]struct {
 				AddInputField("AWS Region", "", 30, nil, nil)
 		},
 		GetConnectParams: func(form *tview.Form) connectParams {
-			db := form.GetFormItem(0).(*tview.InputField).GetText()
+			database := form.GetFormItem(0).(*tview.InputField).GetText()
 			outputLocation := form.GetFormItem(1).(*tview.InputField).GetText()
 			workgroup := form.GetFormItem(2).(*tview.InputField).GetText()
 			awsAccessKeyID := form.GetFormItem(3).(*tview.InputField).GetText()
 			awsSecretAccessKey := form.GetFormItem(4).(*tview.InputField).GetText()
 			awsRegion := form.GetFormItem(5).(*tview.InputField).GetText()
+
 			return connectParams{
-				"db":                db,
+				"db":                database,
 				"output_location":   outputLocation,
 				"workgroup":         workgroup,
 				"access_key_id":     awsAccessKeyID,
@@ -120,11 +125,13 @@ var supportedDrivers = map[string]struct {
 }
 
 func supportedDriverList() []string {
-	var drivers []string
+	drivers := make([]string, 0, len(supportedDriverList()))
 	for k := range supportedDrivers {
 		drivers = append(drivers, k)
 	}
+
 	sort.Strings(drivers)
+
 	return drivers
 }
 
@@ -161,7 +168,7 @@ func (i *sqliteDbInfo) Conn() *sqlx.DB {
 func (i *sqliteDbInfo) GetTables() ([]string, error) {
 	rows, err := i.DB.Query("PRAGMA table_list")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing tables failed: %w", err)
 	}
 	defer rows.Close()
 
@@ -174,10 +181,16 @@ func (i *sqliteDbInfo) GetTables() ([]string, error) {
 			wr                int
 			strict            bool
 		)
+
 		if err := rows.Scan(&schema, &name, &typ, &ncol, &wr, &strict); err != nil {
-			return nil, fmt.Errorf("scan failed: %v", err)
+			return nil, fmt.Errorf("scan failed: %w", err)
 		}
+
 		tables = append(tables, name)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over table list failed: %w", err)
 	}
 
 	return tables, nil
@@ -186,8 +199,7 @@ func (i *sqliteDbInfo) GetTables() ([]string, error) {
 func (i *sqliteDbInfo) GetTableColumns(tbl string) ([]column, error) {
 	rows, err := i.DB.Query("PRAGMA table_info(" + tbl + ")")
 	if err != nil {
-		return nil, fmt.Errorf("querying columns for %s failed: %v", tbl, err)
-
+		return nil, fmt.Errorf("querying columns for %s failed: %w", tbl, err)
 	}
 	defer rows.Close()
 
@@ -203,10 +215,14 @@ func (i *sqliteDbInfo) GetTableColumns(tbl string) ([]column, error) {
 		)
 
 		if err := rows.Scan(&cid, &name, &typ, &notNull, &dfltValue, &pk); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan failed: %w", err)
 		}
 
 		cols = append(cols, column{Name: name, Type: typ})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over table column list failed: %w", err)
 	}
 
 	return cols, nil
@@ -236,39 +252,56 @@ func (i *pgDbInfo) Conn() *sqlx.DB {
 func (i *pgDbInfo) GetTables() ([]string, error) {
 	rows, err := i.DB.Query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing tables failed: %w", err)
 	}
 	defer rows.Close()
 
 	var tables []string
+
 	for rows.Next() {
 		var table string
 		if err := rows.Scan(&table); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan failed: %w", err)
 		}
+
 		tables = append(tables, table)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over table list failed: %w", err)
 	}
 
 	return tables, nil
 }
 
 func (i *pgDbInfo) GetTableColumns(tbl string) ([]column, error) {
-	rows, err := i.DB.Query("select column_name, data_type from information_schema.columns where table_schema = 'public' and table_name = $1", tbl)
+	rows, err := i.DB.Query(`
+			select column_name, data_type 
+			from information_schema.columns
+			where table_schema = 'public' and table_name = $1`,
+		tbl)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing table columns failed: %w", err)
 	}
 	defer rows.Close()
 
 	var cols []column
+
 	for rows.Next() {
 		var (
 			col string
 			typ string
 		)
+
 		if err := rows.Scan(&col, &typ); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan failed: %w", err)
 		}
+
 		cols = append(cols, column{Name: col, Type: typ})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over table column list failed: %w", err)
 	}
 
 	return cols, nil
@@ -292,6 +325,7 @@ func (i *athenaDbInfo) Name() string {
 	if name == "" {
 		name = "Athena"
 	}
+
 	return name
 }
 
@@ -301,6 +335,7 @@ func (i *athenaDbInfo) Conn() *sqlx.DB {
 
 func (i *athenaDbInfo) GetTables() ([]string, error) {
 	name := i.Params["db"]
+
 	rows, err := i.DB.Query("SELECT table_name FROM information_schema.tables WHERE table_schema = '" + name + "'")
 	if err != nil {
 		return nil, err
@@ -308,12 +343,18 @@ func (i *athenaDbInfo) GetTables() ([]string, error) {
 	defer rows.Close()
 
 	var tables []string
+
 	for rows.Next() {
 		var table string
 		if err := rows.Scan(&table); err != nil {
 			return nil, err
 		}
+
 		tables = append(tables, table)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over table list failed: %w", err)
 	}
 
 	return tables, nil
@@ -321,22 +362,33 @@ func (i *athenaDbInfo) GetTables() ([]string, error) {
 
 func (i *athenaDbInfo) GetTableColumns(table string) ([]column, error) {
 	name := i.Params["db"]
-	rows, err := i.DB.Query("select column_name, data_type from information_schema.columns where table_schema = '" + name + "' and table_name = '" + table + "'")
+
+	rows, err := i.DB.Query(`
+			select column_name, data_type 
+			from information_schema.columns 
+			where table_schema = '` + name + "' and table_name = '" + table + "'")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var cols []column
+
 	for rows.Next() {
 		var (
 			col string
 			typ string
 		)
+
 		if err := rows.Scan(&col, &typ); err != nil {
 			return nil, err
 		}
+
 		cols = append(cols, column{Name: col, Type: typ})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over table column list failed: %w", err)
 	}
 
 	return cols, nil

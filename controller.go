@@ -31,7 +31,9 @@ func (c *controller) openDatabase(driver string, params connectParams) error {
 	if err != nil {
 		return err
 	}
+
 	c.view.addDatabase(dbID, c.model.getDatabaseName(dbID))
+
 	return nil
 }
 

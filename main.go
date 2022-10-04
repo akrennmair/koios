@@ -19,7 +19,7 @@ func fail(msg string, args ...interface{}) {
 }
 
 type config struct {
-	// TODO: add if anything is configurable.
+	// add if anything is configurable.
 }
 
 func loadConfig(filename string) (*config, error) {
@@ -106,7 +106,7 @@ func main() {
 		log.Printf("Loading configuration failed: %v", err)
 	} else {
 		_ = cfg
-		// TODO: handle configuration stuff.
+		// handle configuration stuff.
 	}
 
 	session, err := loadSession(sessionFile)

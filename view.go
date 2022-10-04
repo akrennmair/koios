@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -39,6 +40,7 @@ const (
 func newMainView() *mainView {
 	view := &mainView{}
 	view.setup()
+
 	return view
 }
 
@@ -63,7 +65,9 @@ func (v *mainView) setup() {
 	v.resultTable.SetBorder(true).SetTitle("Result")
 	v.resultTable.SetBorders(true)
 
-	v.infoLine = tview.NewTextView().SetText("^Q Quit | ^I Query Input | ^T DB Tree | ^R Result | ^S Select DB | ^Space Run Query | ^A Add DB")
+	infoText := "^Q Quit | ^I Query Input | ^T DB Tree | ^R Result | ^S Select DB | ^Space Run Query | ^A Add DB"
+
+	v.infoLine = tview.NewTextView().SetText(infoText)
 
 	v.layout = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewFlex().
@@ -89,11 +93,13 @@ func (v *mainView) treeNodeSelected(node *tview.TreeNode) {
 	ref, ok := node.GetReference().(*nodeRef)
 	if !ok {
 		node.SetExpanded(!node.IsExpanded())
+
 		return
 	}
 
 	if len(node.GetChildren()) > 0 {
 		node.SetExpanded(!node.IsExpanded())
+
 		return
 	}
 
@@ -102,10 +108,15 @@ func (v *mainView) treeNodeSelected(node *tview.TreeNode) {
 		tables, err := v.ctrl.getTables(ref.DB)
 		if err != nil {
 			v.showError("Listing tables failed: %v", err)
+
 			return
 		}
+
 		for _, table := range tables {
-			node.AddChild(tview.NewTreeNode(table).SetSelectable(true).SetReference(&nodeRef{Type: typeTable, DB: ref.DB, Table: table}))
+			tblNode := tview.NewTreeNode(table).
+				SetSelectable(true).
+				SetReference(&nodeRef{Type: typeTable, DB: ref.DB, Table: table})
+			node.AddChild(tblNode)
 		}
 	case typeTable:
 		fields, err := v.ctrl.getTableColumns(ref.DB, ref.Table)
@@ -144,12 +155,16 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 	case event.Key() == tcell.KeyCtrlSpace:
 		if v.currentDB == "" {
 			v.showError("No database has been selected")
+
 			return nil
 		}
+
 		if err := v.ctrl.execQuery(v.currentDB, v.queryInput.GetText()); err != nil {
 			v.showError("Query failed: %v", err)
+
 			return nil
 		}
+
 		v.app.SetFocus(v.resultTable)
 	default:
 		return event
@@ -179,7 +194,9 @@ func (v *mainView) dbParamsDialog(driver string) {
 	drv.AddInputFields(form)
 	form.AddButton("Add Database", func() {
 		params := drv.GetConnectParams(form)
-		v.ctrl.openDatabase(driver, params)
+		if err := v.ctrl.openDatabase(driver, params); err != nil {
+			log.Printf("Opening database %s %+v failed: %v", driver, params, err)
+		}
 		v.showMainView()
 	}).AddButton("Cancel", func() {
 		v.showMainView()
@@ -190,6 +207,7 @@ func (v *mainView) dbParamsDialog(driver string) {
 
 func (v *mainView) addDatabase(dbID, dbName string) {
 	v.dbRootNode.AddChild(tview.NewTreeNode(dbName).SetSelectable(true).SetReference(&nodeRef{Type: typeDB, DB: dbID}))
+
 	if v.currentDB == "" { // if no database been selected yet, simply set it to database that is being added.
 		v.currentDB = dbID
 	}
@@ -228,5 +246,6 @@ func (v *mainView) run() error {
 	if err := v.app.Run(); err != nil {
 		return fmt.Errorf("running application failed: %w", err)
 	}
+
 	return nil
 }

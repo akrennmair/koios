@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	_ "github.com/akrennmair/go-athena"
@@ -41,21 +42,26 @@ type column struct {
 	Type string
 }
 
+var (
+	errDatabaseNotOpen   = errors.New("database is not open")
+	errUnsupportedDriver = errors.New("unsupported driver")
+)
+
 func (m *model) openDatabase(driver string, params connectParams) (string, error) {
 	dsn, err := m.getDSN(driver, params)
 	if err != nil {
 		return "", err
 	}
 
-	db, err := sqlx.Open(driver, dsn)
+	dbConn, err := sqlx.Open(driver, dsn)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("opening %s database failed: %w", driver, err)
 	}
 
 	dbID := fmt.Sprintf("%s-%d", driver, m.counter)
 	m.counter++
 
-	info, err := m.getDBInfo(driver, params, db)
+	info, err := m.getDBInfo(driver, params, dbConn)
 	if err != nil {
 		return "", err
 	}
@@ -68,23 +74,25 @@ func (m *model) openDatabase(driver string, params connectParams) (string, error
 func (m *model) getDSN(driver string, params connectParams) (string, error) {
 	drv, ok := supportedDrivers[driver]
 	if !ok {
-		return "", fmt.Errorf("unsupported driver %q", driver)
+		return "", fmt.Errorf("%s: %w", driver, errUnsupportedDriver)
 	}
+
 	return drv.DSNGenerator(params), nil
 }
 
-func (m *model) getDBInfo(driver string, params connectParams, db *sqlx.DB) (dbInfo, error) {
+func (m *model) getDBInfo(driver string, params connectParams, dbConn *sqlx.DB) (dbInfo, error) {
 	drv, ok := supportedDrivers[driver]
 	if !ok {
-		return nil, fmt.Errorf("unsupported driver %q", driver)
+		return nil, fmt.Errorf("%s: %w", driver, errUnsupportedDriver)
 	}
-	return drv.DBInfoGenerator(params, db), nil
+
+	return drv.DBInfoGenerator(params, dbConn), nil
 }
 
 func (m *model) getTables(dbID string) ([]string, error) {
 	info := m.dbInfo[dbID]
 	if info == nil {
-		return nil, fmt.Errorf("database is not open")
+		return nil, errDatabaseNotOpen
 	}
 
 	return info.GetTables()
@@ -93,21 +101,21 @@ func (m *model) getTables(dbID string) ([]string, error) {
 func (m *model) getTableColumns(dbID, tbl string) ([]column, error) {
 	info := m.dbInfo[dbID]
 	if info == nil {
-		return nil, fmt.Errorf("database is not open")
+		return nil, errDatabaseNotOpen
 	}
 
 	return info.GetTableColumns(tbl)
 }
 
-func (m *model) execQuery(dbID, q string) error {
+func (m *model) execQuery(dbID, query string) error {
 	info := m.dbInfo[dbID]
 	if info == nil {
-		return fmt.Errorf("database is not open")
+		return errDatabaseNotOpen
 	}
 
-	rows, err := info.Conn().Queryx(q)
+	rows, err := info.Conn().Queryx(query)
 	if err != nil {
-		return err
+		return fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
 
@@ -115,7 +123,7 @@ func (m *model) execQuery(dbID, q string) error {
 
 	columns, err := rows.Columns()
 	if err != nil {
-		return err
+		return fmt.Errorf("listing columns failed: %w", err)
 	}
 
 	m.ctrl.setResultTableColumns(columns)
@@ -123,20 +131,23 @@ func (m *model) execQuery(dbID, q string) error {
 	for rows.Next() {
 		row, err := rows.SliceScan()
 		if err != nil {
-			return err
+			return fmt.Errorf("scanning row failed: %w", err)
 		}
+
 		var values []string
+
 		for _, v := range row {
 			values = append(values, fmt.Sprint(v))
 		}
+
 		m.ctrl.addResultTableRow(values)
 	}
+
 	return nil
 }
 
 func (m *model) getDatabaseName(dbID string) string {
-	info := m.dbInfo[dbID]
-	return info.Name()
+	return m.dbInfo[dbID].Name()
 }
 
 func (m *model) getSession() *sessionData {
@@ -147,5 +158,6 @@ func (m *model) getSession() *sessionData {
 			ConnectParams: dbInfo.ConnectParams(),
 		})
 	}
+
 	return &session
 }
