@@ -1,4 +1,5 @@
 # TODOs
 
-* add generic dialog to add additional databases, make cmdline arg optional
-* add Athena support
+* add "tabs" for query input, store contents in session data.
+* add status line that shows context (which DB selected) and activity on long-running queries.
+* add dedicated help screen
