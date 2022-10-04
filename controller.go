@@ -47,11 +47,11 @@ func (c *controller) addResultTableRow(values []string) {
 	c.view.addResultTableRow(values)
 }
 
-func (c *controller) getSession() sessionData {
+func (c *controller) getSession() *sessionData {
 	return c.model.getSession()
 }
 
-func (c *controller) restoreSession(session sessionData) {
+func (c *controller) restoreSession(session *sessionData) {
 	for _, db := range session.Databases {
 		if err := c.openDatabase(db.Driver, db.ConnectParams); err != nil {
 			log.Printf("Opening database %s %+v failed: %v", db.Driver, db.ConnectParams, err)

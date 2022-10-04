@@ -22,6 +22,49 @@ type config struct {
 	// TODO: add if anything is configurable.
 }
 
+func loadConfig(filename string) (*config, error) {
+	configData, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't read configuration file %s: %w", filename, err)
+	}
+
+	cfg := &config{}
+
+	if err := yaml.Unmarshal(configData, cfg); err != nil {
+		return nil, fmt.Errorf("couldn't unmarshal configuration file %s: %w", filename, err)
+	}
+
+	return cfg, nil
+}
+
+func loadSession(filename string) (*sessionData, error) {
+	sessionFileData, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't read session file %s: %w", filename, err)
+	}
+
+	session := &sessionData{}
+
+	if err := yaml.Unmarshal(sessionFileData, session); err != nil {
+		return nil, fmt.Errorf("couldn't unmarshal session file %s: %w", filename, err)
+	}
+
+	return session, nil
+}
+
+func storeSession(filename string, session *sessionData) error {
+	sessionFileData, err := yaml.Marshal(session)
+	if err != nil {
+		return fmt.Errorf("marshalling session data failed: %w", err)
+	}
+
+	if err := ioutil.WriteFile(filename, sessionFileData, 0600); err != nil {
+		return fmt.Errorf("storing session data to %s failed: %w", filename, err)
+	}
+
+	return nil
+}
+
 func main() {
 	var (
 		debugLogFile string
@@ -58,43 +101,26 @@ func main() {
 	view.setController(ctrl)
 	model.setController(ctrl)
 
-	var (
-		cfg     config
-		session sessionData
-	)
-
-	configData, err := ioutil.ReadFile(configFile)
+	cfg, err := loadConfig(configFile)
 	if err != nil {
-		log.Printf("Couldn't read configuration file %s: %v", configFile, err)
+		log.Printf("Loading configuration failed: %v", err)
 	} else {
-		if err := yaml.Unmarshal(configData, &cfg); err != nil {
-			log.Printf("Couldn't unmarshal configuration file %s: %v", configFile, err)
-		} else {
-			// TODO: set settings
-		}
+		_ = cfg
+		// TODO: handle configuration stuff.
 	}
 
-	sessionFileData, err := ioutil.ReadFile(sessionFile)
+	session, err := loadSession(sessionFile)
 	if err != nil {
-		log.Printf("Couldn't read session file: %s: %v", configFile, err)
+		log.Printf("Loading session data failed: %v", err)
 	} else {
-		if err := yaml.Unmarshal(sessionFileData, &session); err != nil {
-			log.Printf("Couldn't unmarshal session file %s: %v", sessionFile, err)
-		} else {
-			ctrl.restoreSession(session)
-		}
+		ctrl.restoreSession(session)
 	}
 
 	if err := view.run(); err != nil {
 		fail("Starting koios review failed: %v", err)
 	}
 
-	sessionFileData, err = yaml.Marshal(ctrl.getSession())
-	if err != nil {
-		fail("Marshalling session data failed: %v", err)
-	}
-
-	if err := ioutil.WriteFile(sessionFile, sessionFileData, 0600); err != nil {
-		fail("Saving session data failed: %v", err)
+	if err := storeSession(sessionFile, ctrl.getSession()); err != nil {
+		fail("Storing session data failed: %v", err)
 	}
 }

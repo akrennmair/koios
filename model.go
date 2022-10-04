@@ -139,7 +139,7 @@ func (m *model) getDatabaseName(dbID string) string {
 	return info.Name()
 }
 
-func (m *model) getSession() sessionData {
+func (m *model) getSession() *sessionData {
 	var session sessionData
 	for _, dbInfo := range m.dbInfo {
 		session.Databases = append(session.Databases, sessionDataDB{
@@ -147,5 +147,5 @@ func (m *model) getSession() sessionData {
 			ConnectParams: dbInfo.ConnectParams(),
 		})
 	}
-	return session
+	return &session
 }
