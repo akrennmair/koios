@@ -15,6 +15,17 @@ type model struct {
 	counter int
 }
 
+type sessionData struct {
+	Databases []sessionDataDB `yaml:"databases"`
+}
+
+type sessionDataDB struct {
+	Driver        string            `yaml:"driver"`
+	ConnectParams map[string]string `yaml:"connect_params"`
+}
+
+type connectParams map[string]string
+
 func newModel() *model {
 	return &model{
 		dbInfo: make(map[string]dbInfo),
@@ -30,7 +41,12 @@ type column struct {
 	Type string
 }
 
-func (m *model) openDatabase(driver, dsn string) (string, error) {
+func (m *model) openDatabase(driver string, params connectParams) (string, error) {
+	dsn, err := m.getDSN(driver, params)
+	if err != nil {
+		return "", err
+	}
+
 	db, err := sqlx.Open(driver, dsn)
 	if err != nil {
 		return "", err
@@ -39,7 +55,7 @@ func (m *model) openDatabase(driver, dsn string) (string, error) {
 	dbID := fmt.Sprintf("%s-%d", driver, m.counter)
 	m.counter++
 
-	info, err := m.getDBInfo(driver, dsn, db)
+	info, err := m.getDBInfo(driver, params, db)
 	if err != nil {
 		return "", err
 	}
@@ -49,17 +65,20 @@ func (m *model) openDatabase(driver, dsn string) (string, error) {
 	return dbID, nil
 }
 
-func (m *model) getDBInfo(driver, dsn string, db *sqlx.DB) (dbInfo, error) {
-	switch driver {
-	case "sqlite":
-		return &sqliteDbInfo{DSN: dsn, DB: db}, nil
-	case "postgres":
-		return &pgDbInfo{DSN: dsn, DB: db}, nil
-	case "athena":
-		return &athenaDbInfo{DSN: dsn, DB: db}, nil
-	default:
+func (m *model) getDSN(driver string, params connectParams) (string, error) {
+	drv, ok := supportedDrivers[driver]
+	if !ok {
+		return "", fmt.Errorf("unsupported driver %q", driver)
+	}
+	return drv.DSNGenerator(params), nil
+}
+
+func (m *model) getDBInfo(driver string, params connectParams, db *sqlx.DB) (dbInfo, error) {
+	drv, ok := supportedDrivers[driver]
+	if !ok {
 		return nil, fmt.Errorf("unsupported driver %q", driver)
 	}
+	return drv.DBInfoGenerator(params, db), nil
 }
 
 func (m *model) getTables(dbID string) ([]string, error) {
@@ -118,4 +137,15 @@ func (m *model) execQuery(dbID, q string) error {
 func (m *model) getDatabaseName(dbID string) string {
 	info := m.dbInfo[dbID]
 	return info.Name()
+}
+
+func (m *model) getSession() sessionData {
+	var session sessionData
+	for _, dbInfo := range m.dbInfo {
+		session.Databases = append(session.Databases, sessionDataDB{
+			Driver:        dbInfo.Driver(),
+			ConnectParams: dbInfo.ConnectParams(),
+		})
+	}
+	return session
 }

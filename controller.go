@@ -1,5 +1,7 @@
 package main
 
+import "log"
+
 type controller struct {
 	model *model
 	view  *mainView
@@ -24,8 +26,8 @@ func (c *controller) execQuery(dbID, q string) error {
 	return c.model.execQuery(dbID, q)
 }
 
-func (c *controller) openDatabase(driver, db string) error {
-	dbID, err := c.model.openDatabase(driver, db)
+func (c *controller) openDatabase(driver string, params connectParams) error {
+	dbID, err := c.model.openDatabase(driver, params)
 	if err != nil {
 		return err
 	}
@@ -43,4 +45,16 @@ func (c *controller) setResultTableColumns(columns []string) {
 
 func (c *controller) addResultTableRow(values []string) {
 	c.view.addResultTableRow(values)
+}
+
+func (c *controller) getSession() sessionData {
+	return c.model.getSession()
+}
+
+func (c *controller) restoreSession(session sessionData) {
+	for _, db := range session.Databases {
+		if err := c.openDatabase(db.Driver, db.ConnectParams); err != nil {
+			log.Printf("Opening database %s %+v failed: %v", db.Driver, db.ConnectParams, err)
+		}
+	}
 }

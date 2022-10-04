@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net/url"
-	"strconv"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -162,17 +160,10 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 
 func (v *mainView) addDatabaseDialog() {
 	selectedOption := ""
-	form := tview.NewForm().AddDropDown("Driver", []string{"sqlite", "postgres", "athena"}, 0, func(option string, optionIndex int) {
+	form := tview.NewForm().AddDropDown("Driver", supportedDriverList(), 0, func(option string, optionIndex int) {
 		selectedOption = option
 	}).AddButton("Next", func() {
-		switch selectedOption {
-		case "sqlite":
-			v.addDatabaseDialogSqlite()
-		case "postgres":
-			v.addDatabaseDialogPostgres()
-		case "athena":
-			v.addDatabaseDialogAthena()
-		}
+		v.dbParamsDialog(selectedOption)
 	}).AddButton("Cancel", func() {
 		v.showMainView()
 	})
@@ -182,98 +173,18 @@ func (v *mainView) addDatabaseDialog() {
 	v.app.SetRoot(form, true)
 }
 
-func (v *mainView) addDatabaseDialogSqlite() {
-	var form *tview.Form
-	form = tview.NewForm().
-		AddInputField("Filename", "", 30, nil, nil).
-		AddButton("Add Database", func() {
-			v.ctrl.openDatabase("sqlite", form.GetFormItem(0).(*tview.InputField).GetText())
-			v.showMainView()
-		}).
-		AddButton("Cancel", func() {
-			v.showMainView()
-		})
-
-	form.SetBorder(true).SetTitle("Add Database - SQLite Configuration")
-
-	v.app.SetRoot(form, true)
-}
-
-func (v *mainView) addDatabaseDialogPostgres() {
-	var form *tview.Form
-	form = tview.NewForm().
-		AddInputField("Database", "", 30, nil, nil).
-		AddInputField("User", "", 30, nil, nil).
-		AddPasswordField("Password", "", 30, '*', nil).
-		AddInputField("Host", "localhost", 30, nil, nil).
-		AddInputField("Port", "5432", 30, func(textToCheck string, lastChar rune) bool {
-			i, err := strconv.ParseUint(textToCheck, 10, 64)
-			return err == nil && i >= 1 && i <= 65535
-		}, nil).
-		AddDropDown("SSL Mode", []string{"disable", "require", "verify-ca", "verify-full"}, 0, nil).
-		AddButton("Add Database", func() {
-			db := form.GetFormItem(0).(*tview.InputField).GetText()
-			user := form.GetFormItem(1).(*tview.InputField).GetText()
-			password := form.GetFormItem(2).(*tview.InputField).GetText()
-			host := form.GetFormItem(3).(*tview.InputField).GetText()
-			port := form.GetFormItem(4).(*tview.InputField).GetText()
-			_, sslMode := form.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
-			if err := v.ctrl.openDatabase("postgres", fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", user, password, host, port, db, sslMode)); err != nil {
-				v.showError("opening database failed: %v", err)
-				return
-			}
-			v.showMainView()
-		}).
-		AddButton("Cancel", func() {
-			v.showMainView()
-		})
-
-	form.SetBorder(true).SetTitle("Add Database - PostgreSQL Configuration")
-
-	v.app.SetRoot(form, true)
-}
-
-func (v *mainView) addDatabaseDialogAthena() {
-	var form *tview.Form
-	form = tview.NewForm().
-		AddInputField("Database", "", 30, nil, nil).
-		AddInputField("Output Location", "", 30, nil, nil).
-		AddInputField("Workgroup", "primary", 30, nil, nil).
-		AddInputField("AWS Access Key ID", "", 30, nil, nil).
-		AddPasswordField("AWS Secret Access Key", "", 30, '*', nil).
-		AddInputField("AWS Region", "", 30, nil, nil).
-		AddButton("Add Database", func() {
-			db := form.GetFormItem(0).(*tview.InputField).GetText()
-			outputLocation := form.GetFormItem(1).(*tview.InputField).GetText()
-			workgroup := form.GetFormItem(2).(*tview.InputField).GetText()
-			awsAccessKeyID := form.GetFormItem(3).(*tview.InputField).GetText()
-			awsSecretAccessKey := form.GetFormItem(4).(*tview.InputField).GetText()
-			awsRegion := form.GetFormItem(5).(*tview.InputField).GetText()
-			cfg := url.Values{}
-			if db != "" {
-				cfg.Add("db", db)
-			}
-			if outputLocation != "" {
-				cfg.Add("output_location", outputLocation)
-			}
-			if workgroup != "" {
-				cfg.Add("workgroup", workgroup)
-			}
-			cfg.Add("access_key_id", awsAccessKeyID)
-			cfg.Add("secret_access_key", awsSecretAccessKey)
-			cfg.Add("region", awsRegion)
-			if err := v.ctrl.openDatabase("athena", cfg.Encode()); err != nil {
-				v.showError("opening database failed: %v", err)
-				return
-			}
-			v.showMainView()
-		}).
-		AddButton("Cancel", func() {
-			v.showMainView()
-		})
-
-	form.SetBorder(true).SetTitle("Add Database - Athena Configuration")
-
+func (v *mainView) dbParamsDialog(driver string) {
+	drv := supportedDrivers[driver]
+	form := tview.NewForm()
+	drv.AddInputFields(form)
+	form.AddButton("Add Database", func() {
+		params := drv.GetConnectParams(form)
+		v.ctrl.openDatabase(driver, params)
+		v.showMainView()
+	}).AddButton("Cancel", func() {
+		v.showMainView()
+	})
+	form.SetBorder(true).SetTitle(fmt.Sprintf("Add Database - %s Configuration", drv.Name))
 	v.app.SetRoot(form, true)
 }
 

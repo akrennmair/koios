@@ -5,12 +5,125 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"sort"
+	"strconv"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/rivo/tview"
 )
+
+var supportedDrivers = map[string]struct {
+	Name             string
+	DSNGenerator     func(params connectParams) string
+	DBInfoGenerator  func(params connectParams, db *sqlx.DB) dbInfo
+	AddInputFields   func(form *tview.Form)
+	GetConnectParams func(form *tview.Form) connectParams
+}{
+	"sqlite": {
+		Name: "SQLite",
+		DSNGenerator: func(params connectParams) string {
+			return params["file"]
+		},
+		DBInfoGenerator: func(params connectParams, db *sqlx.DB) dbInfo {
+			return &sqliteDbInfo{Params: params, DB: db}
+		},
+		AddInputFields: func(form *tview.Form) {
+			form.AddInputField("Filename", "", 30, nil, nil)
+		},
+		GetConnectParams: func(form *tview.Form) connectParams {
+			return connectParams{"file": form.GetFormItem(0).(*tview.InputField).GetText()}
+		},
+	},
+	"postgres": {
+		Name: "PostgreSQL",
+		DSNGenerator: func(params connectParams) string {
+			return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+				params["user"], params["password"], params["host"], params["port"], params["db"], params["ssl_mode"])
+		},
+		DBInfoGenerator: func(params connectParams, db *sqlx.DB) dbInfo {
+			return &pgDbInfo{Params: params, DB: db}
+		},
+		AddInputFields: func(form *tview.Form) {
+			form.
+				AddInputField("Database", "", 30, nil, nil).
+				AddInputField("User", "", 30, nil, nil).
+				AddPasswordField("Password", "", 30, '*', nil).
+				AddInputField("Host", "localhost", 30, nil, nil).
+				AddInputField("Port", "5432", 30, func(textToCheck string, lastChar rune) bool {
+					i, err := strconv.ParseUint(textToCheck, 10, 64)
+					return err == nil && i >= 1 && i <= 65535
+				}, nil).
+				AddDropDown("SSL Mode", []string{"disable", "require", "verify-ca", "verify-full"}, 0, nil)
+		},
+		GetConnectParams: func(form *tview.Form) connectParams {
+			db := form.GetFormItem(0).(*tview.InputField).GetText()
+			user := form.GetFormItem(1).(*tview.InputField).GetText()
+			password := form.GetFormItem(2).(*tview.InputField).GetText()
+			host := form.GetFormItem(3).(*tview.InputField).GetText()
+			port := form.GetFormItem(4).(*tview.InputField).GetText()
+			_, sslMode := form.GetFormItem(5).(*tview.DropDown).GetCurrentOption()
+			return connectParams{
+				"db":       db,
+				"user":     user,
+				"password": password,
+				"host":     host,
+				"port":     port,
+				"ssl_mode": sslMode,
+			}
+		},
+	},
+	"athena": {
+		Name: "Athena",
+		DSNGenerator: func(params connectParams) string {
+			values := new(url.Values)
+			for k, v := range params {
+				values.Set(k, v)
+			}
+			return values.Encode()
+		},
+		DBInfoGenerator: func(params connectParams, db *sqlx.DB) dbInfo {
+			return &athenaDbInfo{Params: params, DB: db}
+		},
+		AddInputFields: func(form *tview.Form) {
+			form.
+				AddInputField("Database", "", 30, nil, nil).
+				AddInputField("Output Location", "", 30, nil, nil).
+				AddInputField("Workgroup", "primary", 30, nil, nil).
+				AddInputField("AWS Access Key ID", "", 30, nil, nil).
+				AddPasswordField("AWS Secret Access Key", "", 30, '*', nil).
+				AddInputField("AWS Region", "", 30, nil, nil)
+		},
+		GetConnectParams: func(form *tview.Form) connectParams {
+			db := form.GetFormItem(0).(*tview.InputField).GetText()
+			outputLocation := form.GetFormItem(1).(*tview.InputField).GetText()
+			workgroup := form.GetFormItem(2).(*tview.InputField).GetText()
+			awsAccessKeyID := form.GetFormItem(3).(*tview.InputField).GetText()
+			awsSecretAccessKey := form.GetFormItem(4).(*tview.InputField).GetText()
+			awsRegion := form.GetFormItem(5).(*tview.InputField).GetText()
+			return connectParams{
+				"db":                db,
+				"output_location":   outputLocation,
+				"workgroup":         workgroup,
+				"access_key_id":     awsAccessKeyID,
+				"secret_access_key": awsSecretAccessKey,
+				"region":            awsRegion,
+			}
+		},
+	},
+}
+
+func supportedDriverList() []string {
+	var drivers []string
+	for k := range supportedDrivers {
+		drivers = append(drivers, k)
+	}
+	sort.Strings(drivers)
+	return drivers
+}
 
 type dbInfo interface {
 	Driver() string
+	ConnectParams() connectParams
 	Name() string
 	Conn() *sqlx.DB
 	GetTables() ([]string, error)
@@ -18,16 +131,20 @@ type dbInfo interface {
 }
 
 type sqliteDbInfo struct {
-	DSN string
-	DB  *sqlx.DB
+	Params connectParams
+	DB     *sqlx.DB
 }
 
 func (i *sqliteDbInfo) Driver() string {
 	return "sqlite"
 }
 
+func (i *sqliteDbInfo) ConnectParams() connectParams {
+	return i.Params
+}
+
 func (i *sqliteDbInfo) Name() string {
-	return filepath.Base(i.DSN)
+	return filepath.Base(i.Params["file"])
 }
 
 func (i *sqliteDbInfo) Conn() *sqlx.DB {
@@ -89,17 +206,20 @@ func (i *sqliteDbInfo) GetTableColumns(tbl string) ([]column, error) {
 }
 
 type pgDbInfo struct {
-	DSN string
-	DB  *sqlx.DB
+	Params connectParams
+	DB     *sqlx.DB
 }
 
 func (i *pgDbInfo) Driver() string {
 	return "postgres"
 }
 
+func (i *pgDbInfo) ConnectParams() connectParams {
+	return i.Params
+}
+
 func (i *pgDbInfo) Name() string {
-	u, _ := url.Parse(i.DSN)
-	return fmt.Sprintf("%s%s", u.Hostname(), u.Path)
+	return fmt.Sprintf("%s/%s", i.Params["host"], i.Params["db"])
 }
 
 func (i *pgDbInfo) Conn() *sqlx.DB {
@@ -148,17 +268,20 @@ func (i *pgDbInfo) GetTableColumns(tbl string) ([]column, error) {
 }
 
 type athenaDbInfo struct {
-	DSN string
-	DB  *sqlx.DB
+	Params connectParams
+	DB     *sqlx.DB
 }
 
 func (i *athenaDbInfo) Driver() string {
 	return "athena"
 }
 
+func (i *athenaDbInfo) ConnectParams() connectParams {
+	return i.Params
+}
+
 func (i *athenaDbInfo) Name() string {
-	params, _ := url.ParseQuery(i.DSN)
-	name := params.Get("db")
+	name := i.Params["db"]
 	if name == "" {
 		name = "Athena"
 	}
@@ -170,8 +293,7 @@ func (i *athenaDbInfo) Conn() *sqlx.DB {
 }
 
 func (i *athenaDbInfo) GetTables() ([]string, error) {
-	params, _ := url.ParseQuery(i.DSN)
-	name := params.Get("db")
+	name := i.Params["db"]
 	rows, err := i.DB.Query("SELECT table_name FROM information_schema.tables WHERE table_schema = '" + name + "'")
 	if err != nil {
 		return nil, err
@@ -191,8 +313,7 @@ func (i *athenaDbInfo) GetTables() ([]string, error) {
 }
 
 func (i *athenaDbInfo) GetTableColumns(table string) ([]column, error) {
-	params, _ := url.ParseQuery(i.DSN)
-	name := params.Get("db")
+	name := i.Params["db"]
 	rows, err := i.DB.Query("select column_name, data_type from information_schema.columns where table_schema = '" + name + "' and table_name = '" + table + "'")
 	if err != nil {
 		return nil, err

@@ -8,6 +8,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/lib/pq v1.10.7
 	github.com/rivo/tview v0.0.0-20220916081518-2e69b7385a37
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.19.1
 )
 
