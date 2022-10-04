@@ -5,18 +5,23 @@ import (
 	"log"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/navidys/tvxwidgets"
 	"github.com/rivo/tview"
 )
 
 type mainView struct {
 	ctrl *controller
 
-	app         *tview.Application
-	layout      *tview.Flex
-	dbTree      *tview.TreeView
-	queryInput  *tview.TextArea
-	resultTable *tview.Table
-	infoLine    *tview.TextView
+	app          *tview.Application
+	layout       *tview.Flex
+	dbTree       *tview.TreeView
+	queryInput   *tview.TextArea
+	resultTable  *tview.Table
+	infoLine     *tview.Flex
+	contextField *tview.TextView
+
+	activityGauge       *tvxwidgets.ActivityModeGauge
+	activityPlaceholder *tview.Box
 
 	dbRootNode *tview.TreeNode
 
@@ -65,9 +70,16 @@ func (v *mainView) setup() {
 	v.resultTable.SetBorder(true).SetTitle("Result")
 	v.resultTable.SetBorders(true)
 
-	infoText := "^Q Quit | ^I Query Input | ^T DB Tree | ^R Result | ^S Select DB | ^Space Run Query | ^A Add DB"
+	v.contextField = tview.NewTextView()
+	v.activityGauge = tvxwidgets.NewActivityModeGauge()
+	v.activityPlaceholder = tview.NewBox()
 
-	v.infoLine = tview.NewTextView().SetText(infoText)
+	v.infoLine = tview.NewFlex().
+		AddItem(v.contextField, 0, 1, false).
+		AddItem(v.activityPlaceholder, 0, 3, false)
+	// TODO: when long-running activities are started, remove activityPlaceholder and add activityGauge which
+	// needs to be pulsed and the app redrawn, until operation is finished, which is when activityGauge is
+	// again removed and activityPlaceholder is put back into place.
 
 	v.layout = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewFlex().
@@ -146,7 +158,7 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 			ref, ok := currentNode.GetReference().(*nodeRef)
 			if ok {
 				if ref.Type == typeDB {
-					v.currentDB = ref.DB
+					v.setCurrentDB(ref.DB)
 				}
 			}
 		}
@@ -209,8 +221,14 @@ func (v *mainView) addDatabase(dbID, dbName string) {
 	v.dbRootNode.AddChild(tview.NewTreeNode(dbName).SetSelectable(true).SetReference(&nodeRef{Type: typeDB, DB: dbID}))
 
 	if v.currentDB == "" { // if no database been selected yet, simply set it to database that is being added.
-		v.currentDB = dbID
+		v.setCurrentDB(dbID)
 	}
+}
+
+func (v *mainView) setCurrentDB(dbID string) {
+	v.currentDB = dbID
+	dbName := v.ctrl.getDatabaseName(dbID)
+	v.contextField.SetText("Current DB: " + dbName)
 }
 
 func (v *mainView) clearResultTable() {

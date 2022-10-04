@@ -125,7 +125,7 @@ var supportedDrivers = map[string]struct {
 }
 
 func supportedDriverList() []string {
-	drivers := make([]string, 0, len(supportedDriverList()))
+	drivers := make([]string, 0, len(supportedDrivers))
 	for k := range supportedDrivers {
 		drivers = append(drivers, k)
 	}

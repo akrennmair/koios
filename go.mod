@@ -7,6 +7,7 @@ require (
 	github.com/gdamore/tcell/v2 v2.4.1-0.20210905002822-f057f0a857a1
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/lib/pq v1.10.7
+	github.com/navidys/tvxwidgets v0.1.1
 	github.com/rivo/tview v0.0.0-20220916081518-2e69b7385a37
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.19.1
