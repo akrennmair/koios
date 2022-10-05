@@ -85,7 +85,7 @@ var supportedDrivers = map[string]struct {
 	"athena": {
 		Name: "Athena",
 		DSNGenerator: func(params connectParams) string {
-			values := new(url.Values)
+			values := make(url.Values)
 			for k, v := range params {
 				values.Set(k, v)
 			}

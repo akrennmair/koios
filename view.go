@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/navidys/tvxwidgets"
@@ -22,6 +23,7 @@ type mainView struct {
 
 	activityGauge       *tvxwidgets.ActivityModeGauge
 	activityPlaceholder *tview.Box
+	gaugeC              chan struct{}
 
 	dbRootNode *tview.TreeNode
 
@@ -43,7 +45,9 @@ const (
 )
 
 func newMainView() *mainView {
-	view := &mainView{}
+	view := &mainView{
+		gaugeC: make(chan struct{}, 1),
+	}
 	view.setup()
 
 	return view
@@ -77,9 +81,6 @@ func (v *mainView) setup() {
 	v.infoLine = tview.NewFlex().
 		AddItem(v.contextField, 0, 1, false).
 		AddItem(v.activityPlaceholder, 0, 3, false)
-	// TODO: when long-running activities are started, remove activityPlaceholder and add activityGauge which
-	// needs to be pulsed and the app redrawn, until operation is finished, which is when activityGauge is
-	// again removed and activityPlaceholder is put back into place.
 
 	v.layout = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewFlex().
@@ -94,6 +95,44 @@ func (v *mainView) setup() {
 	v.app.EnableMouse(true)
 
 	v.showMainView()
+}
+
+func (v *mainView) startActivityGauge() {
+	log.Printf("Starting activity gauge")
+
+	v.activityGauge.Reset()
+	v.infoLine.RemoveItem(v.activityPlaceholder)
+	v.infoLine.AddItem(v.activityGauge, 0, 3, false)
+
+	ticker := time.NewTicker(250 * time.Millisecond)
+
+	go func() {
+		defer func() {
+			ticker.Stop()
+			v.app.QueueUpdateDraw(func() {
+				v.infoLine.RemoveItem(v.activityGauge)
+				v.infoLine.AddItem(v.activityPlaceholder, 0, 3, false)
+				log.Printf("Stopped activity gauge")
+			})
+		}()
+
+		for {
+			select {
+			case <-ticker.C:
+				log.Printf("Activity gauge pulse")
+				v.app.QueueUpdateDraw(func() {
+					v.activityGauge.Pulse()
+				})
+				log.Printf("After activity gauge pulse draw")
+			case <-v.gaugeC:
+				return
+			}
+		}
+	}()
+}
+
+func (v *mainView) stopActivityGauge() {
+	v.gaugeC <- struct{}{}
 }
 
 func (v *mainView) showMainView() {
@@ -117,28 +156,41 @@ func (v *mainView) treeNodeSelected(node *tview.TreeNode) {
 
 	switch ref.Type {
 	case typeDB:
-		tables, err := v.ctrl.getTables(ref.DB)
-		if err != nil {
-			v.showError("Listing tables failed: %v", err)
+		go func() {
+			v.startActivityGauge()
+			defer v.stopActivityGauge()
 
-			return
-		}
+			log.Printf("Getting list of tables from database %s", ref.DB)
 
-		for _, table := range tables {
-			tblNode := tview.NewTreeNode(table).
-				SetSelectable(true).
-				SetReference(&nodeRef{Type: typeTable, DB: ref.DB, Table: table})
-			node.AddChild(tblNode)
-		}
+			tables, err := v.ctrl.getTables(ref.DB)
+			if err != nil {
+				v.showError("Listing tables failed: %v", err)
+
+				return
+			}
+
+			for _, table := range tables {
+				tblNode := tview.NewTreeNode(table).
+					SetSelectable(true).
+					SetReference(&nodeRef{Type: typeTable, DB: ref.DB, Table: table})
+				node.AddChild(tblNode)
+			}
+			log.Printf("Finished getting list of tables from database %s", ref.DB)
+		}()
 	case typeTable:
-		fields, err := v.ctrl.getTableColumns(ref.DB, ref.Table)
-		if err != nil {
-			v.showError("Listing columns for %s failed: %v", ref.Table, err)
-		}
+		go func() {
+			v.startActivityGauge()
+			defer v.stopActivityGauge()
 
-		for _, field := range fields {
-			node.AddChild(tview.NewTreeNode(field.Name + " (" + field.Type + ")"))
-		}
+			fields, err := v.ctrl.getTableColumns(ref.DB, ref.Table)
+			if err != nil {
+				v.showError("Listing columns for %s failed: %v", ref.Table, err)
+			}
+
+			for _, field := range fields {
+				node.AddChild(tview.NewTreeNode(field.Name + " (" + field.Type + ")"))
+			}
+		}()
 	}
 }
 
@@ -171,13 +223,18 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 
-		if err := v.ctrl.execQuery(v.currentDB, v.queryInput.GetText()); err != nil {
-			v.showError("Query failed: %v", err)
+		go func() {
+			v.startActivityGauge()
+			defer v.stopActivityGauge()
 
-			return nil
-		}
+			if err := v.ctrl.execQuery(v.currentDB, v.queryInput.GetText()); err != nil {
+				v.showError("Query failed: %v", err)
 
-		v.app.SetFocus(v.resultTable)
+				return
+			}
+
+			v.app.SetFocus(v.resultTable)
+		}()
 	default:
 		return event
 	}
