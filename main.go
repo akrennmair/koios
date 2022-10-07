@@ -19,19 +19,22 @@ func fail(msg string, args ...interface{}) {
 }
 
 type config struct {
-	// add if anything is configurable.
+	Keys []struct {
+		Key       string `yaml:"key"`
+		Operation string `yaml:"operation"`
+	} `yaml:"keys"`
 }
 
-func loadConfig(filename string) (*config, error) {
+func loadConfig(filename string) (config, error) {
+	var cfg config
+
 	configData, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't read configuration file %s: %w", filename, err)
+		return cfg, fmt.Errorf("couldn't read configuration file %s: %w", filename, err)
 	}
 
-	cfg := &config{}
-
 	if err := yaml.Unmarshal(configData, cfg); err != nil {
-		return nil, fmt.Errorf("couldn't unmarshal configuration file %s: %w", filename, err)
+		return cfg, fmt.Errorf("couldn't unmarshal configuration file %s: %w", filename, err)
 	}
 
 	return cfg, nil
@@ -104,9 +107,10 @@ func main() {
 	cfg, err := loadConfig(configFile)
 	if err != nil {
 		log.Printf("Loading configuration failed: %v", err)
-	} else {
-		_ = cfg
-		// handle configuration stuff.
+	}
+
+	if err := view.configure(cfg); err != nil {
+		fail("Configuration failed: %v", err)
 	}
 
 	session, err := loadSession(sessionFile)

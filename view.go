@@ -29,6 +29,9 @@ type mainView struct {
 
 	currentResultTableRow int
 	currentDB             string // currently selected dbID
+
+	keyMapping       map[string]string // mapping of key to operation
+	operationMapping map[string]func() // mapping of operation to function
 }
 
 type nodeRef struct {
@@ -46,11 +49,43 @@ const (
 
 func newMainView() *mainView {
 	view := &mainView{
-		gaugeC: make(chan struct{}, 1),
+		gaugeC:           make(chan struct{}, 1),
+		keyMapping:       make(map[string]string),
+		operationMapping: make(map[string]func()),
 	}
 	view.setup()
 
 	return view
+}
+
+func (v *mainView) configure(cfg config) error {
+	v.operationMapping["quit"] = v.quit
+	v.operationMapping["goto-queryinput"] = v.gotoQueryInput
+	v.operationMapping["goto-tree"] = v.gotoTree
+	v.operationMapping["goto-result"] = v.gotoResultTable
+	v.operationMapping["set-current-db"] = v.setCurrentDatabase
+	v.operationMapping["add-db"] = v.addDatabaseDialog
+	v.operationMapping["exec-query"] = v.execQuery
+
+	v.keyMapping["Ctrl+Q"] = "quit"
+	v.keyMapping["Tab"] = "goto-queryinput"
+	v.keyMapping["Ctrl+T"] = "goto-tree"
+	v.keyMapping["Ctrl+R"] = "goto-result"
+	v.keyMapping["Ctrl+S"] = "set-current-db"
+	v.keyMapping["Ctrl+A"] = "add-db"
+	v.keyMapping["Ctrl+Space"] = "exec-query"
+
+	for _, keyCfg := range cfg.Keys {
+		v.keyMapping[keyCfg.Key] = keyCfg.Operation
+	}
+
+	for _, op := range v.keyMapping {
+		if _, ok := v.operationMapping[op]; !ok {
+			return fmt.Errorf("unknown operation %q", op)
+		}
+	}
+
+	return nil
 }
 
 func (v *mainView) setController(c *controller) {
@@ -195,51 +230,76 @@ func (v *mainView) treeNodeSelected(node *tview.TreeNode) {
 }
 
 func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
-	switch {
-	case event.Key() == tcell.KeyCtrlQ:
-		v.app.Stop()
-	case event.Key() == tcell.KeyCtrlI:
-		v.app.SetFocus(v.queryInput)
-	case event.Key() == tcell.KeyCtrlT:
-		v.app.SetFocus(v.dbTree)
-	case event.Key() == tcell.KeyCtrlR:
-		v.app.SetFocus(v.resultTable)
-	case event.Key() == tcell.KeyCtrlS:
-		currentNode := v.dbTree.GetCurrentNode()
-		if currentNode != nil {
-			ref, ok := currentNode.GetReference().(*nodeRef)
-			if ok {
-				if ref.Type == typeDB {
-					v.setCurrentDB(ref.DB)
-				}
-			}
-		}
-	case event.Key() == tcell.KeyCtrlA:
-		v.addDatabaseDialog()
-	case event.Key() == tcell.KeyCtrlSpace:
-		if v.currentDB == "" {
-			v.showError("No database has been selected")
+	keyName := event.Name()
 
-			return nil
-		}
+	log.Printf("Handling key %s", keyName)
 
-		go func() {
-			v.startActivityGauge()
-			defer v.stopActivityGauge()
-
-			if err := v.ctrl.execQuery(v.currentDB, v.queryInput.GetText()); err != nil {
-				v.showError("Query failed: %v", err)
-
-				return
-			}
-
-			v.app.SetFocus(v.resultTable)
-		}()
-	default:
+	op, ok := v.keyMapping[keyName]
+	if !ok {
+		log.Printf("No key mapping found for key %s", keyName)
 		return event
 	}
 
+	opFunc, ok := v.operationMapping[op]
+	if !ok {
+		log.Printf("Operation %s not found", op)
+		return event
+	}
+
+	log.Printf("Received key %s and executing operation %s", keyName, op)
+
+	opFunc()
+
 	return nil
+}
+
+func (v *mainView) quit() {
+	v.app.Stop()
+}
+
+func (v *mainView) gotoQueryInput() {
+	v.app.SetFocus(v.queryInput)
+}
+
+func (v *mainView) gotoTree() {
+	v.app.SetFocus(v.dbTree)
+}
+
+func (v *mainView) gotoResultTable() {
+	v.app.SetFocus(v.resultTable)
+}
+
+func (v *mainView) setCurrentDatabase() {
+	currentNode := v.dbTree.GetCurrentNode()
+	if currentNode != nil {
+		ref, ok := currentNode.GetReference().(*nodeRef)
+		if ok {
+			if ref.Type == typeDB {
+				v.setCurrentDB(ref.DB)
+			}
+		}
+	}
+}
+
+func (v *mainView) execQuery() {
+	if v.currentDB == "" {
+		v.showError("No database has been selected")
+
+		return
+	}
+
+	go func() {
+		v.startActivityGauge()
+		defer v.stopActivityGauge()
+
+		if err := v.ctrl.execQuery(v.currentDB, v.queryInput.GetText()); err != nil {
+			v.showError("Query failed: %v", err)
+
+			return
+		}
+
+		v.app.SetFocus(v.resultTable)
+	}()
 }
 
 func (v *mainView) addDatabaseDialog() {
