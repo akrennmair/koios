@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -30,8 +31,13 @@ type mainView struct {
 	currentResultTableRow int
 	currentDB             string // currently selected dbID
 
-	keyMapping       map[string]string // mapping of key to operation
-	operationMapping map[string]func() // mapping of operation to function
+	keyMapping       map[string]string    // mapping of key to operation name
+	operationMapping map[string]operation // mapping of operation name to operation
+}
+
+type operation struct {
+	Function    func()
+	Description string
 }
 
 type nodeRef struct {
@@ -47,11 +53,15 @@ const (
 	typeTable
 )
 
+var (
+	errUnknownOperation = errors.New("unknown operation")
+)
+
 func newMainView() *mainView {
 	view := &mainView{
 		gaugeC:           make(chan struct{}, 1),
 		keyMapping:       make(map[string]string),
-		operationMapping: make(map[string]func()),
+		operationMapping: make(map[string]operation),
 	}
 	view.setup()
 
@@ -59,13 +69,34 @@ func newMainView() *mainView {
 }
 
 func (v *mainView) configure(cfg config) error {
-	v.operationMapping["quit"] = v.quit
-	v.operationMapping["goto-queryinput"] = v.gotoQueryInput
-	v.operationMapping["goto-tree"] = v.gotoTree
-	v.operationMapping["goto-result"] = v.gotoResultTable
-	v.operationMapping["set-current-db"] = v.setCurrentDatabase
-	v.operationMapping["add-db"] = v.addDatabaseDialog
-	v.operationMapping["exec-query"] = v.execQuery
+	v.operationMapping["quit"] = operation{
+		Function:    v.quit,
+		Description: "Quit koios",
+	}
+	v.operationMapping["goto-queryinput"] = operation{
+		Function:    v.gotoQueryInput,
+		Description: "Go to query input field",
+	}
+	v.operationMapping["goto-tree"] = operation{
+		Function:    v.gotoTree,
+		Description: "Go to database tree",
+	}
+	v.operationMapping["goto-result"] = operation{
+		Function:    v.gotoResultTable,
+		Description: "Go to result table",
+	}
+	v.operationMapping["set-current-db"] = operation{
+		Function:    v.setCurrentDatabase,
+		Description: "Set selected database in tree as current database",
+	}
+	v.operationMapping["add-db"] = operation{
+		Function:    v.addDatabaseDialog,
+		Description: "Open the dialog to add a new database",
+	}
+	v.operationMapping["exec-query"] = operation{
+		Function:    v.execQuery,
+		Description: "Execute query in input field and show result in table below",
+	}
 
 	v.keyMapping["Ctrl+Q"] = "quit"
 	v.keyMapping["Tab"] = "goto-queryinput"
@@ -81,7 +112,7 @@ func (v *mainView) configure(cfg config) error {
 
 	for _, op := range v.keyMapping {
 		if _, ok := v.operationMapping[op]; !ok {
-			return fmt.Errorf("unknown operation %q", op)
+			return fmt.Errorf("%q: %w", op, errUnknownOperation)
 		}
 	}
 
@@ -210,6 +241,7 @@ func (v *mainView) treeNodeSelected(node *tview.TreeNode) {
 					SetReference(&nodeRef{Type: typeTable, DB: ref.DB, Table: table})
 				node.AddChild(tblNode)
 			}
+
 			log.Printf("Finished getting list of tables from database %s", ref.DB)
 		}()
 	case typeTable:
@@ -234,21 +266,23 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 
 	log.Printf("Handling key %s", keyName)
 
-	op, ok := v.keyMapping[keyName]
+	opName, ok := v.keyMapping[keyName]
 	if !ok {
 		log.Printf("No key mapping found for key %s", keyName)
+
 		return event
 	}
 
-	opFunc, ok := v.operationMapping[op]
+	op, ok := v.operationMapping[opName]
 	if !ok {
-		log.Printf("Operation %s not found", op)
+		log.Printf("Operation %s not found", opName)
+
 		return event
 	}
 
-	log.Printf("Received key %s and executing operation %s", keyName, op)
+	log.Printf("Received key %s and executing operation %s", keyName, opName)
 
-	opFunc()
+	op.Function()
 
 	return nil
 }
