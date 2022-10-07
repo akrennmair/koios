@@ -1,4 +1,3 @@
 # TODOs
 
 * add "tabs" for query input, store contents in session data.
-* add dedicated help screen
