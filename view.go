@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -23,7 +24,7 @@ type mainView struct {
 	contextField *tview.TextView
 
 	activityGauge       *tvxwidgets.ActivityModeGauge
-	activityPlaceholder *tview.Box
+	activityPlaceholder *tview.TextView
 	gaugeC              chan struct{}
 
 	dbRootNode *tview.TreeNode
@@ -97,6 +98,10 @@ func (v *mainView) configure(cfg config) error {
 		Function:    v.execQuery,
 		Description: "Execute query in input field and show result in table below",
 	}
+	v.operationMapping["show-help"] = operation{
+		Function:    v.showHelp,
+		Description: "Show help screen",
+	}
 
 	v.keyMapping["Ctrl+Q"] = "quit"
 	v.keyMapping["Tab"] = "goto-queryinput"
@@ -105,6 +110,7 @@ func (v *mainView) configure(cfg config) error {
 	v.keyMapping["Ctrl+S"] = "set-current-db"
 	v.keyMapping["Ctrl+A"] = "add-db"
 	v.keyMapping["Ctrl+Space"] = "exec-query"
+	v.keyMapping["Rune[?]"] = "show-help"
 
 	for _, keyCfg := range cfg.Keys {
 		v.keyMapping[keyCfg.Key] = keyCfg.Operation
@@ -142,7 +148,8 @@ func (v *mainView) setup() {
 
 	v.contextField = tview.NewTextView()
 	v.activityGauge = tvxwidgets.NewActivityModeGauge()
-	v.activityPlaceholder = tview.NewBox()
+	v.activityPlaceholder = tview.NewTextView()
+	v.activityPlaceholder.SetText("Press ? for help")
 
 	v.infoLine = tview.NewFlex().
 		AddItem(v.contextField, 0, 1, false).
@@ -409,6 +416,51 @@ func (v *mainView) showError(s string, args ...any) {
 		})
 
 	v.app.SetRoot(modal, false)
+}
+
+func (v *mainView) showHelp() {
+	helpScreen := tview.NewTable()
+	helpScreen.SetBorder(true).SetTitle("Help (press ESC to exit)")
+
+	type keyMappingConfig struct {
+		Key         string
+		Operation   string
+		Description string
+	}
+
+	keyMappings := []keyMappingConfig{}
+
+	for keyName, opName := range v.keyMapping {
+		desc := v.operationMapping[opName].Description
+
+		keyMappings = append(keyMappings, keyMappingConfig{Key: keyName, Operation: opName, Description: desc})
+	}
+
+	sort.Slice(keyMappings, func(i, j int) bool {
+		return keyMappings[i].Operation < keyMappings[j].Operation
+	})
+
+	for idx, hdr := range []string{"Key", "Operation", "Description"} {
+		helpScreen.SetCell(0, idx, tview.NewTableCell(hdr).SetAttributes(tcell.AttrBold))
+	}
+
+	for idx, keyMapping := range keyMappings {
+		helpScreen.SetCellSimple(idx+1, 0, keyMapping.Key)
+		helpScreen.SetCellSimple(idx+1, 1, keyMapping.Operation)
+		helpScreen.SetCellSimple(idx+1, 2, keyMapping.Description)
+	}
+
+	helpScreen.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyESC {
+			v.showMainView()
+
+			return nil
+		}
+
+		return event
+	})
+
+	v.app.SetRoot(helpScreen, true)
 }
 
 func (v *mainView) run() error {
