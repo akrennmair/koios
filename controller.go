@@ -50,11 +50,10 @@ func (c *controller) addResultTableRow(values []string) {
 }
 
 func (c *controller) getSession() *sessionData {
-	session := &sessionData{
+	return &sessionData{
 		Databases: c.model.getSession(),
 		Queries:   c.view.getSession(),
 	}
-	return session
 }
 
 func (c *controller) restoreSession(session *sessionData) {

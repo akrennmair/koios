@@ -19,7 +19,6 @@ linters:
     - exhaustive
     - exportloopref
     - forbidigo
-    - funlen
     - gci
     - gochecknoinits
     - gocognit

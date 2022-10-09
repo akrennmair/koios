@@ -357,6 +357,7 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 
 func (v *mainView) saveCurrentQuery() {
 	currentQuery := v.queryInput.GetText()
+
 	if v.queryTabIdx == len(v.queryTabs) {
 		if currentQuery != "" {
 			v.queryTabs = append(v.queryTabs, currentQuery)
@@ -379,7 +380,9 @@ func (v *mainView) nextQueryTab() {
 	if v.queryTabIdx > len(v.queryTabs) {
 		v.queryTabIdx = len(v.queryTabs)
 	}
+
 	currentQuery := v.queryInput.GetText()
+
 	if v.queryTabIdx == len(v.queryTabs) {
 		if currentQuery != "" {
 			v.queryTabs = append(v.queryTabs, currentQuery)
@@ -389,14 +392,19 @@ func (v *mainView) nextQueryTab() {
 			v.queryTabIdx = 0
 			v.queryInput.SetText(v.queryTabs[v.queryTabIdx], true)
 		}
+
+		v.updateQueryInputTitle()
+
+		return
+	}
+
+	v.queryTabs[v.queryTabIdx] = currentQuery
+	v.queryTabIdx++
+
+	if v.queryTabIdx < len(v.queryTabs) {
+		v.queryInput.SetText(v.queryTabs[v.queryTabIdx], true)
 	} else {
-		v.queryTabs[v.queryTabIdx] = currentQuery
-		v.queryTabIdx++
-		if v.queryTabIdx < len(v.queryTabs) {
-			v.queryInput.SetText(v.queryTabs[v.queryTabIdx], true)
-		} else {
-			v.queryInput.SetText("", true)
-		}
+		v.queryInput.SetText("", true)
 	}
 
 	v.updateQueryInputTitle()

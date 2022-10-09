@@ -143,7 +143,8 @@ func (m *model) getDatabaseName(dbID string) string {
 }
 
 func (m *model) getSession() []sessionDataDB {
-	var dbs []sessionDataDB
+	dbs := make([]sessionDataDB, 0, len(m.dbInfo))
+
 	for _, dbInfo := range m.dbInfo {
 		dbs = append(dbs, sessionDataDB{
 			Driver:        dbInfo.Driver(),
