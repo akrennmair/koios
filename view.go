@@ -115,17 +115,28 @@ func (v *mainView) configure(cfg config) error {
 		Function:    v.prevQueryTab,
 		Description: "Go to previous query tab",
 	}
+	v.operationMapping["close-tab"] = operation{
+		Function:    v.closeQueryTab,
+		Description: "Close current query tab",
+	}
+	v.operationMapping["close-db"] = operation{
+		Function:    v.closeDB,
+		Description: "Close database currently selected in tree",
+	}
 
+	v.keyMapping["Ctrl+A"] = "add-db"
+	v.keyMapping["Tab"] = "goto-queryinput" // Ctrl+I
+	v.keyMapping["Ctrl+N"] = "next-query-tab"
 	v.keyMapping["Ctrl+Q"] = "quit"
-	v.keyMapping["Tab"] = "goto-queryinput"
-	v.keyMapping["Ctrl+T"] = "goto-tree"
+	v.keyMapping["Ctrl+P"] = "prev-query-tab"
 	v.keyMapping["Ctrl+R"] = "goto-result"
 	v.keyMapping["Ctrl+S"] = "set-current-db"
-	v.keyMapping["Ctrl+A"] = "add-db"
+	v.keyMapping["Ctrl+T"] = "goto-tree"
+	v.keyMapping["Ctrl+X"] = "close-tab"
+	v.keyMapping["Ctrl+Y"] = "close-db"
+
 	v.keyMapping["Ctrl+Space"] = "exec-query"
 	v.keyMapping["Rune[?]"] = "show-help"
-	v.keyMapping["Ctrl+N"] = "next-query-tab"
-	v.keyMapping["Ctrl+P"] = "prev-query-tab"
 
 	for _, keyCfg := range cfg.Keys {
 		v.keyMapping[keyCfg.Key] = keyCfg.Operation
@@ -344,7 +355,19 @@ func (v *mainView) handleKey(event *tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
+func (v *mainView) saveCurrentQuery() {
+	currentQuery := v.queryInput.GetText()
+	if v.queryTabIdx == len(v.queryTabs) {
+		if currentQuery != "" {
+			v.queryTabs = append(v.queryTabs, currentQuery)
+		}
+	} else {
+		v.queryTabs[v.queryTabIdx] = currentQuery
+	}
+}
+
 func (v *mainView) quit() {
+	v.saveCurrentQuery()
 	v.app.Stop()
 }
 
@@ -400,7 +423,44 @@ func (v *mainView) prevQueryTab() {
 	}
 
 	v.queryInput.SetText(v.queryTabs[v.queryTabIdx], true)
+	v.updateQueryInputTitle()
+}
 
+func (v *mainView) closeDB() {
+	treeNode := v.dbTree.GetCurrentNode()
+	if treeNode == nil {
+		return
+	}
+
+	ref, ok := treeNode.GetReference().(*nodeRef)
+	if !ok {
+		return
+	}
+
+	if ref.Type != typeDB {
+		return
+	}
+
+	v.dbTree.GetRoot().RemoveChild(treeNode)
+
+	v.setCurrentDB(v.ctrl.closeDatabase(ref.DB))
+}
+
+func (v *mainView) closeQueryTab() {
+	if len(v.queryTabs) == 1 {
+		return
+	}
+
+	if v.queryTabIdx == len(v.queryTabs) {
+		v.queryTabIdx--
+	} else {
+		v.queryTabs = append(v.queryTabs[:v.queryTabIdx], v.queryTabs[v.queryTabIdx+1:]...)
+		if v.queryTabIdx > 0 {
+			v.queryTabIdx--
+		}
+	}
+
+	v.queryInput.SetText(v.queryTabs[v.queryTabIdx], true)
 	v.updateQueryInputTitle()
 }
 
@@ -487,8 +547,12 @@ func (v *mainView) addDatabase(dbID, dbName string) {
 
 func (v *mainView) setCurrentDB(dbID string) {
 	v.currentDB = dbID
-	dbName := v.ctrl.getDatabaseName(dbID)
-	v.contextField.SetText("Current DB: " + dbName)
+	if v.currentDB == "" {
+		v.contextField.SetText("No DB selected!")
+	} else {
+		dbName := v.ctrl.getDatabaseName(dbID)
+		v.contextField.SetText("Current DB: " + dbName)
+	}
 }
 
 func (v *mainView) clearResultTable() {

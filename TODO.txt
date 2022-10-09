@@ -1,4 +1,3 @@
 # TODOs
 
-* add keys to close current tab and current database
 * add key to download query result as CSV

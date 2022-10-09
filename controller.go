@@ -70,3 +70,7 @@ func (c *controller) restoreSession(session *sessionData) {
 func (c *controller) getDatabaseName(dbID string) string {
 	return c.model.getDatabaseName(dbID)
 }
+
+func (c *controller) closeDatabase(dbID string) string {
+	return c.model.closeDatabase(dbID)
+}

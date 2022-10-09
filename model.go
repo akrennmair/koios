@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	_ "github.com/akrennmair/go-athena"
 	"github.com/jmoiron/sqlx"
@@ -151,4 +152,23 @@ func (m *model) getSession() []sessionDataDB {
 	}
 
 	return dbs
+}
+
+func (m *model) closeDatabase(dbID string) string {
+	db, ok := m.dbInfo[dbID]
+	if !ok {
+		log.Printf("Couldn't close database %s because it doesn't exist", dbID)
+	}
+
+	if err := db.Conn().Close(); err != nil {
+		log.Printf("Closing connection to database %s failed: %v", dbID, err)
+	}
+
+	delete(m.dbInfo, dbID)
+
+	for newDbID := range m.dbInfo {
+		return newDbID
+	}
+
+	return ""
 }
