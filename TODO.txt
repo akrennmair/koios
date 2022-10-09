@@ -1,3 +1,4 @@
 # TODOs
 
-* add "tabs" for query input, store contents in session data.
+* add keys to close current tab and current database
+* add key to download query result as CSV

@@ -16,15 +16,6 @@ type model struct {
 	counter int
 }
 
-type sessionData struct {
-	Databases []sessionDataDB `yaml:"databases"`
-}
-
-type sessionDataDB struct {
-	Driver        string            `yaml:"driver"`
-	ConnectParams map[string]string `yaml:"connect_params"`
-}
-
 type connectParams map[string]string
 
 func newModel() *model {
@@ -150,14 +141,14 @@ func (m *model) getDatabaseName(dbID string) string {
 	return m.dbInfo[dbID].Name()
 }
 
-func (m *model) getSession() *sessionData {
-	var session sessionData
+func (m *model) getSession() []sessionDataDB {
+	var dbs []sessionDataDB
 	for _, dbInfo := range m.dbInfo {
-		session.Databases = append(session.Databases, sessionDataDB{
+		dbs = append(dbs, sessionDataDB{
 			Driver:        dbInfo.Driver(),
 			ConnectParams: dbInfo.ConnectParams(),
 		})
 	}
 
-	return &session
+	return dbs
 }

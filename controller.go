@@ -50,7 +50,11 @@ func (c *controller) addResultTableRow(values []string) {
 }
 
 func (c *controller) getSession() *sessionData {
-	return c.model.getSession()
+	session := &sessionData{
+		Databases: c.model.getSession(),
+		Queries:   c.view.getSession(),
+	}
+	return session
 }
 
 func (c *controller) restoreSession(session *sessionData) {
@@ -59,6 +63,8 @@ func (c *controller) restoreSession(session *sessionData) {
 			log.Printf("Opening database %s %+v failed: %v", db.Driver, db.ConnectParams, err)
 		}
 	}
+
+	c.view.restoreSession(session.Queries)
 }
 
 func (c *controller) getDatabaseName(dbID string) string {

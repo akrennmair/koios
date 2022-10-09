@@ -34,6 +34,9 @@ type mainView struct {
 
 	keyMapping       map[string]string    // mapping of key to operation name
 	operationMapping map[string]operation // mapping of operation name to operation
+
+	queryTabs   []string
+	queryTabIdx int
 }
 
 type operation struct {
@@ -63,6 +66,8 @@ func newMainView() *mainView {
 		gaugeC:           make(chan struct{}, 1),
 		keyMapping:       make(map[string]string),
 		operationMapping: make(map[string]operation),
+		queryTabs:        []string{""},
+		queryTabIdx:      0,
 	}
 	view.setup()
 
@@ -102,6 +107,14 @@ func (v *mainView) configure(cfg config) error {
 		Function:    v.showHelp,
 		Description: "Show help screen",
 	}
+	v.operationMapping["next-query-tab"] = operation{
+		Function:    v.nextQueryTab,
+		Description: "Go to next query tab",
+	}
+	v.operationMapping["prev-query-tab"] = operation{
+		Function:    v.prevQueryTab,
+		Description: "Go to previous query tab",
+	}
 
 	v.keyMapping["Ctrl+Q"] = "quit"
 	v.keyMapping["Tab"] = "goto-queryinput"
@@ -111,6 +124,8 @@ func (v *mainView) configure(cfg config) error {
 	v.keyMapping["Ctrl+A"] = "add-db"
 	v.keyMapping["Ctrl+Space"] = "exec-query"
 	v.keyMapping["Rune[?]"] = "show-help"
+	v.keyMapping["Ctrl+N"] = "next-query-tab"
+	v.keyMapping["Ctrl+P"] = "prev-query-tab"
 
 	for _, keyCfg := range cfg.Keys {
 		v.keyMapping[keyCfg.Key] = keyCfg.Operation
@@ -140,7 +155,8 @@ func (v *mainView) setup() {
 	v.dbTree.SetSelectedFunc(v.treeNodeSelected)
 
 	v.queryInput = tview.NewTextArea()
-	v.queryInput.SetBorder(true).SetTitle("Query")
+	v.queryInput.SetBorder(true)
+	v.updateQueryInputTitle()
 
 	v.resultTable = tview.NewTable()
 	v.resultTable.SetBorder(true).SetTitle("Result")
@@ -168,6 +184,40 @@ func (v *mainView) setup() {
 	v.app.EnableMouse(true)
 
 	v.showMainView()
+}
+
+func (v *mainView) restoreSession(queries *queriesData) {
+	if queries == nil {
+		return
+	}
+
+	v.queryTabs = queries.Tabs
+	v.queryTabIdx = queries.Index
+
+	if v.queryTabIdx > len(v.queryTabs) {
+		v.queryTabIdx = len(v.queryTabs)
+	}
+
+	if v.queryTabIdx < len(v.queryTabs) {
+		v.queryInput.SetText(v.queryTabs[v.queryTabIdx], true)
+	}
+
+	v.updateQueryInputTitle()
+}
+
+func (v *mainView) getSession() *queriesData {
+	if len(v.queryTabs) > 1 || v.queryTabs[0] != "" {
+		return &queriesData{
+			Tabs:  v.queryTabs,
+			Index: v.queryTabIdx,
+		}
+	}
+
+	return nil
+}
+
+func (v *mainView) updateQueryInputTitle() {
+	v.queryInput.SetTitle(fmt.Sprintf("Query %d", v.queryTabIdx))
 }
 
 func (v *mainView) startActivityGauge() {
@@ -300,6 +350,58 @@ func (v *mainView) quit() {
 
 func (v *mainView) gotoQueryInput() {
 	v.app.SetFocus(v.queryInput)
+}
+
+func (v *mainView) nextQueryTab() {
+	if v.queryTabIdx > len(v.queryTabs) {
+		v.queryTabIdx = len(v.queryTabs)
+	}
+	currentQuery := v.queryInput.GetText()
+	if v.queryTabIdx == len(v.queryTabs) {
+		if currentQuery != "" {
+			v.queryTabs = append(v.queryTabs, currentQuery)
+			v.queryTabIdx++
+			v.queryInput.SetText("", true)
+		} else {
+			v.queryTabIdx = 0
+			v.queryInput.SetText(v.queryTabs[v.queryTabIdx], true)
+		}
+	} else {
+		v.queryTabs[v.queryTabIdx] = currentQuery
+		v.queryTabIdx++
+		if v.queryTabIdx < len(v.queryTabs) {
+			v.queryInput.SetText(v.queryTabs[v.queryTabIdx], true)
+		} else {
+			v.queryInput.SetText("", true)
+		}
+	}
+
+	v.updateQueryInputTitle()
+}
+
+func (v *mainView) prevQueryTab() {
+	if v.queryTabIdx > len(v.queryTabs) {
+		v.queryTabIdx = len(v.queryTabs)
+	}
+
+	currentQuery := v.queryInput.GetText()
+	if v.queryTabIdx == len(v.queryTabs) {
+		if currentQuery != "" {
+			v.queryTabs = append(v.queryTabs, currentQuery)
+		}
+	} else {
+		v.queryTabs[v.queryTabIdx] = currentQuery
+	}
+
+	v.queryTabIdx--
+
+	if v.queryTabIdx < 0 {
+		v.queryTabIdx = len(v.queryTabs) - 1
+	}
+
+	v.queryInput.SetText(v.queryTabs[v.queryTabIdx], true)
+
+	v.updateQueryInputTitle()
 }
 
 func (v *mainView) gotoTree() {
