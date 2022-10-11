@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"time"
 
@@ -123,8 +125,13 @@ func (v *mainView) configure(cfg config) error {
 		Function:    v.closeDB,
 		Description: "Close database currently selected in tree",
 	}
+	v.operationMapping["download-result"] = operation{
+		Function:    v.downloadResult,
+		Description: "Download result to CSV file",
+	}
 
 	v.keyMapping["Ctrl+A"] = "add-db"
+	v.keyMapping["Ctrl+D"] = "download-result"
 	v.keyMapping["Tab"] = "goto-queryinput" // Ctrl+I
 	v.keyMapping["Ctrl+N"] = "next-query-tab"
 	v.keyMapping["Ctrl+Q"] = "quit"
@@ -232,6 +239,7 @@ func (v *mainView) updateQueryInputTitle() {
 	if v.queryTabIdx == total {
 		total++
 	}
+
 	v.queryInput.SetTitle(fmt.Sprintf("Query %d/%d", v.queryTabIdx+1, total))
 }
 
@@ -555,6 +563,48 @@ func (v *mainView) addDatabase(dbID, dbName string) {
 	if v.currentDB == "" { // if no database been selected yet, simply set it to database that is being added.
 		v.setCurrentDB(dbID)
 	}
+}
+
+func (v *mainView) downloadResult() {
+	form := tview.NewForm()
+	form.AddInputField("File", time.Now().Format("result_20060102_150405.csv"), 80, nil, nil)
+	form.AddButton("Save", func() {
+		filename := form.GetFormItem(0).(*tview.InputField).GetText()
+
+		f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+		if err != nil {
+			v.showError("Saving file failed: %v", err)
+
+			return
+		}
+		defer f.Close()
+
+		csvWriter := csv.NewWriter(f)
+
+		for rowIdx := 0; rowIdx < v.resultTable.GetRowCount(); rowIdx++ {
+			var fields []string
+			for colIdx := 0; colIdx < v.resultTable.GetColumnCount(); colIdx++ {
+				fields = append(fields, v.resultTable.GetCell(rowIdx, colIdx).Text)
+			}
+			if err := csvWriter.Write(fields); err != nil {
+				v.showError("Writing file failed: %v", err)
+
+				return
+			}
+		}
+
+		csvWriter.Flush()
+
+		if err := csvWriter.Error(); err != nil {
+			log.Printf("CSV writer indicated error: %v", err)
+		}
+
+		v.showMainView()
+	}).AddButton("Cancel", func() {
+		v.showMainView()
+	})
+	form.SetBorder(true).SetTitle("Store Result")
+	v.app.SetRoot(form, true)
 }
 
 func (v *mainView) setCurrentDB(dbID string) {

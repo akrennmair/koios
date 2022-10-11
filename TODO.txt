@@ -1,3 +1,2 @@
 # TODOs
 
-* add key to download query result as CSV
