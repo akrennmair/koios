@@ -228,7 +228,11 @@ func (v *mainView) getSession() *queriesData {
 }
 
 func (v *mainView) updateQueryInputTitle() {
-	v.queryInput.SetTitle(fmt.Sprintf("Query %d", v.queryTabIdx))
+	total := len(v.queryTabs)
+	if v.queryTabIdx == total {
+		total++
+	}
+	v.queryInput.SetTitle(fmt.Sprintf("Query %d/%d", v.queryTabIdx+1, total))
 }
 
 func (v *mainView) startActivityGauge() {
